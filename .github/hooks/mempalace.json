@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "./hooks/mempal_save_hook.sh",
+        "windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./hooks/mempal_save_hook.ps1",
+        "cwd": ".",
+        "timeout": 30
+      }
+    ],
+    "PreCompact": [
+      {
+        "type": "command",
+        "command": "./hooks/mempal_precompact_hook.sh",
+        "windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./hooks/mempal_precompact_hook.ps1",
+        "cwd": ".",
+        "timeout": 30
+      }
+    ]
+  }
+}

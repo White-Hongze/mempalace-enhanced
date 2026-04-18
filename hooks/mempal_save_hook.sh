@@ -63,21 +63,32 @@ MEMPAL_DIR=""
 
 # Read JSON input from stdin
 INPUT=$(cat)
+INPUT_B64=$(printf '%s' "$INPUT" | base64 | tr -d '\n')
 
-# Parse all fields in a single Python call (3x faster than separate invocations)
-eval $(echo "$INPUT" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-sid = data.get('session_id', 'unknown')
-sha = data.get('stop_hook_active', False)
-tp = data.get('transcript_path', '')
-# Shell-safe output — only allow alphanumeric, underscore, hyphen, slash, dot, tilde
+# Parse all fields in a single Python call
+PARSED_VARS=$(HOOK_INPUT_B64="$INPUT_B64" python3 - <<'PYEOF'
+import base64
+import json
+import os
 import re
-safe = lambda s: re.sub(r'[^a-zA-Z0-9_/.\-~]', '', str(s))
-print(f'SESSION_ID=\"{safe(sid)}\"')
-print(f'STOP_HOOK_ACTIVE=\"{sha}\"')
-print(f'TRANSCRIPT_PATH=\"{safe(tp)}\"')
-" 2>/dev/null)
+
+raw = base64.b64decode(os.environ.get("HOOK_INPUT_B64", "")).decode("utf-8")
+data = json.loads(raw or "{}")
+sid = data.get("session_id") or data.get("sessionId", "unknown")
+sha = data.get("stop_hook_active", False)
+tp = (data.get("transcript_path") or data.get("transcriptPath", "")).replace("\\", "/")
+event = data.get("hookEventName", "")
+
+# Shell-safe output — also allow colon for Windows drive-letter paths
+safe = lambda s: re.sub(r"[^a-zA-Z0-9_/:.\-~]", "", str(s))
+
+print(f'SESSION_ID="{safe(sid)}"')
+print(f'STOP_HOOK_ACTIVE="{sha}"')
+print(f'TRANSCRIPT_PATH="{safe(tp)}"')
+print(f'HOOK_EVENT_NAME="{safe(event)}"')
+PYEOF
+2>/dev/null)
+eval "$PARSED_VARS"
 
 # Expand ~ in path
 TRANSCRIPT_PATH="${TRANSCRIPT_PATH/#\~/$HOME}"
@@ -142,12 +153,26 @@ if [ "$SINCE_LAST" -ge "$SAVE_INTERVAL" ] && [ "$EXCHANGE_COUNT" -gt 0 ]; then
 
     # Block the AI and tell it to save
     # The "reason" becomes a system message the AI sees and acts on
-    cat << 'HOOKJSON'
+        if [ "$HOOK_EVENT_NAME" = "Stop" ]; then
+                cat << 'HOOKJSON'
+{
+    "decision": "block",
+    "reason": "AUTO-SAVE checkpoint. Save key topics, decisions, quotes, and code from this session to your memory system. Organize into appropriate categories. Use verbatim quotes where possible. Continue conversation after saving.",
+    "hookSpecificOutput": {
+        "hookEventName": "Stop",
+        "decision": "block",
+        "reason": "AUTO-SAVE checkpoint. Save key topics, decisions, quotes, and code from this session to your memory system. Organize into appropriate categories. Use verbatim quotes where possible. Continue conversation after saving."
+    }
+}
+HOOKJSON
+        else
+                cat << 'HOOKJSON'
 {
   "decision": "block",
   "reason": "AUTO-SAVE checkpoint. Save key topics, decisions, quotes, and code from this session to your memory system. Organize into appropriate categories. Use verbatim quotes where possible. Continue conversation after saving."
 }
 HOOKJSON
+        fi
 else
     # Not time yet — let the AI stop normally
     echo "{}"
