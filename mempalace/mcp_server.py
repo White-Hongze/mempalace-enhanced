@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-MemPalace MCP Server — read/write palace access for Claude Code
+MemPalace MCP 服务器 — 为 Claude Code 提供记忆宫殿的读写访问
 ================================================================
-Install: claude mcp add mempalace -- python -m mempalace.mcp_server [--palace /path/to/palace]
+安装: claude mcp add mempalace -- python -m mempalace.mcp_server [--palace /path/to/palace]
 
-Tools (read):
-  mempalace_status          — total drawers, wing/room breakdown
-  mempalace_list_wings      — all wings with drawer counts
-  mempalace_list_rooms      — rooms within a wing
-  mempalace_get_taxonomy    — full wing → room → count tree
-  mempalace_search          — semantic search, optional wing/room filter
-  mempalace_check_duplicate — check if content already exists before filing
+工具 (读取):
+  mempalace_status          — 总抽屉数、翼/房间分布
+  mempalace_list_wings      — 所有翼及其抽屉数
+  mempalace_list_rooms      — 翼内的房间列表
+  mempalace_get_taxonomy    — 完整的 翼 → 房间 → 数量 树
+  mempalace_search          — 语义搜索，可按翼/房间过滤
+  mempalace_check_duplicate — 归档前检查内容是否已存在
 
-Tools (write):
-  mempalace_add_drawer      — file verbatim content into a wing/room
-  mempalace_delete_drawer   — remove a drawer by ID
+工具 (写入):
+  mempalace_add_drawer      — 将原文内容归档到翼/房间
+  mempalace_delete_drawer   — 按 ID 删除抽屉
 """
 
 import argparse
@@ -39,11 +39,11 @@ logger = logging.getLogger("mempalace_mcp")
 
 
 def _parse_args():
-    parser = argparse.ArgumentParser(description="MemPalace MCP Server")
+    parser = argparse.ArgumentParser(description="MemPalace MCP 服务器")
     parser.add_argument(
         "--palace",
         metavar="PATH",
-        help="Path to the palace directory (overrides config file and env var)",
+        help="宫殿目录路径（覆盖配置文件和环境变量）",
     )
     args, unknown = parser.parse_known_args()
     if unknown:
@@ -67,10 +67,10 @@ _client_cache = None
 _collection_cache = None
 
 
-# ==================== WRITE-AHEAD LOG ====================
-# Every write operation is logged to a JSONL file before execution.
-# This provides an audit trail for detecting memory poisoning and
-# enables review/rollback of writes from external or untrusted sources.
+# ==================== 预写日志 (WAL) ====================
+# 每个写操作在执行前都会记录到 JSONL 文件中。
+# 这提供了审计跟踪，用于检测记忆投毒，
+# 并支持对来自外部或不可信来源的写操作进行审查/回滚。
 
 _WAL_DIR = Path(os.path.expanduser("~/.mempalace/wal"))
 _WAL_DIR.mkdir(parents=True, exist_ok=True)
@@ -82,7 +82,7 @@ _WAL_FILE = _WAL_DIR / "write_log.jsonl"
 
 
 def _wal_log(operation: str, params: dict, result: dict = None):
-    """Append a write operation to the write-ahead log."""
+    """将写操作追加到预写日志。"""
     entry = {
         "timestamp": datetime.now().isoformat(),
         "operation": operation,
@@ -105,7 +105,7 @@ _collection_cache = None
 
 
 def _get_client():
-    """Return a singleton ChromaDB PersistentClient."""
+    """返回单例 ChromaDB PersistentClient。"""
     global _client_cache
     if _client_cache is None:
         _client_cache = chromadb.PersistentClient(path=_config.palace_path)
@@ -113,7 +113,7 @@ def _get_client():
 
 
 def _get_collection(create=False):
-    """Return the ChromaDB collection, caching the client between calls."""
+    """返回 ChromaDB collection，在调用之间缓存客户端。"""
     global _collection_cache
     try:
         client = _get_client()
@@ -133,7 +133,7 @@ def _no_palace():
     }
 
 
-# ==================== READ TOOLS ====================
+# ==================== 读取工具 ====================
 
 
 def tool_status():
@@ -158,41 +158,21 @@ def tool_status():
         "rooms": rooms,
         "palace_path": _config.palace_path,
         "protocol": PALACE_PROTOCOL,
-        "aaak_dialect": AAAK_SPEC,
     }
 
 
-# ── AAAK Dialect Spec ─────────────────────────────────────────────────────────
-# Included in status response so the AI learns it on first wake-up call.
-# Also available via mempalace_get_aaak_spec tool.
+# ── 宫殿协议 ─────────────────────────────────────────────────────────────
+# 包含在 status 响应中，以便 AI 在首次唤醒时学习。
 
-PALACE_PROTOCOL = """IMPORTANT — MemPalace Memory Protocol:
-1. ON WAKE-UP: Call mempalace_status to load palace overview + AAAK spec.
-2. BEFORE RESPONDING about any person, project, or past event: call mempalace_kg_query or mempalace_search FIRST. Never guess — verify.
-3. IF UNSURE about a fact (name, gender, age, relationship): say "let me check" and query the palace. Wrong is worse than slow.
-4. AFTER EACH SESSION: call mempalace_diary_write to record what happened, what you learned, what matters.
-5. WHEN FACTS CHANGE: call mempalace_kg_invalidate on the old fact, mempalace_kg_add for the new one.
+PALACE_PROTOCOL = """重要 — MemPalace 记忆协议：
+1. 唤醒时：调用 mempalace_status 加载宫殿概览。
+2. 回答关于任何人物、项目或过往事件的问题前：先调用 mempalace_kg_query 或 mempalace_search 查证。绝不猜测——务必核实。
+3. 对某个事实不确定时（姓名、性别、年龄、关系）：说"让我查一下"，然后查询宫殿。说错比说慢更糟糕。
+4. 每次会话结束后：调用 mempalace_diary_write 用自然语言中文记录发生了什么、学到了什么、什么是重要的。
+5. 每次会话开始前：调用 mempalace_diary_write 用自然语言中文记录上一个会话发生了什么、学到了什么、什么是重要的。
+6. 事实发生变化时：先调用 mempalace_kg_invalidate 标记旧事实失效，再调用 mempalace_kg_add 添加新事实。
 
-This protocol ensures the AI KNOWS before it speaks. Storage is not memory — but storage + this protocol = memory."""
-
-AAAK_SPEC = """AAAK is a compressed memory dialect that MemPalace uses for efficient storage.
-It is designed to be readable by both humans and LLMs without decoding.
-
-FORMAT:
-  ENTITIES: 3-letter uppercase codes. ALC=Alice, JOR=Jordan, RIL=Riley, MAX=Max, BEN=Ben.
-  EMOTIONS: *action markers* before/during text. *warm*=joy, *fierce*=determined, *raw*=vulnerable, *bloom*=tenderness.
-  STRUCTURE: Pipe-separated fields. FAM: family | PROJ: projects | ⚠: warnings/reminders.
-  DATES: ISO format (2026-03-31). COUNTS: Nx = N mentions (e.g., 570x).
-  IMPORTANCE: ★ to ★★★★★ (1-5 scale).
-  HALLS: hall_facts, hall_events, hall_discoveries, hall_preferences, hall_advice.
-  WINGS: wing_user, wing_agent, wing_team, wing_code, wing_myproject, wing_hardware, wing_ue5, wing_ai_research.
-  ROOMS: Hyphenated slugs representing named ideas (e.g., chromadb-setup, gpu-pricing).
-
-EXAMPLE:
-  FAM: ALC→♡JOR | 2D(kids): RIL(18,sports) MAX(11,chess+swimming) | BEN(contributor)
-
-Read AAAK naturally — expand codes mentally, treat *markers* as emotional context.
-When WRITING AAAK: use entity codes, mark emotions, keep structure tight."""
+此协议确保 AI 先知后言。存储不等于记忆——但存储 + 此协议 = 记忆。"""
 
 
 def tool_list_wings():
@@ -247,16 +227,73 @@ def tool_get_taxonomy():
 
 
 def tool_search(query: str, limit: int = 5, wing: str = None, room: str = None):
-    return search_memories(
+    result = search_memories(
         query,
         palace_path=_config.palace_path,
         wing=wing,
         room=room,
         n_results=limit,
     )
+    if "error" in result:
+        return result
+
+    # 召回规则：超过 7 天的命中结果，自动加载当天全部 diary 作为补充上下文
+    from datetime import timedelta
+
+    now = datetime.now()
+    cutoff = now - timedelta(days=7)
+    old_dates = set()
+
+    for hit in result.get("results", []):
+        filed_at = hit.get("filed_at", "")
+        if filed_at:
+            try:
+                hit_time = datetime.fromisoformat(filed_at)
+                if hit_time < cutoff:
+                    date_str = hit.get("date", "")
+                    if date_str:
+                        old_dates.add(date_str)
+            except (ValueError, TypeError):
+                pass
+
+    if old_dates:
+        col = _get_collection()
+        if col:
+            expanded_context = []
+            for date_str in sorted(old_dates):
+                try:
+                    day_results = col.get(
+                        where={"$and": [{"room": "diary"}, {"date": date_str}]},
+                        include=["documents", "metadatas"],
+                    )
+                    if day_results["ids"]:
+                        for doc, meta in zip(
+                            day_results["documents"], day_results["metadatas"]
+                        ):
+                            expanded_context.append(
+                                {
+                                    "text": doc,
+                                    "wing": meta.get("wing", "unknown"),
+                                    "room": "diary",
+                                    "topic": meta.get("topic", ""),
+                                    "date": date_str,
+                                    "source": "expanded_recall",
+                                }
+                            )
+                except Exception:
+                    pass
+            if expanded_context:
+                result["expanded_diary_context"] = expanded_context
+                result["recall_note"] = (
+                    f"命中结果中有 {len(old_dates)} 天超过 7 天前的内容，"
+                    f"已自动加载这些天的全部 diary 条目（共 {len(expanded_context)} 条）作为补充上下文。"
+                )
+
+    return result
 
 
 def tool_check_duplicate(content: str, threshold: float = 0.9):
+    """检查内容是否已存在于宫殿中。"""
     col = _get_collection()
     if not col:
         return _no_palace()
@@ -291,13 +328,9 @@ def tool_check_duplicate(content: str, threshold: float = 0.9):
         return {"error": str(e)}
 
 
-def tool_get_aaak_spec():
-    """Return the AAAK dialect specification."""
-    return {"aaak_spec": AAAK_SPEC}
-
 
 def tool_traverse_graph(start_room: str, max_hops: int = 2):
-    """Walk the palace graph from a room. Find connected ideas across wings."""
+    """从一个房间出发遍历宫殿图。发现跨翼的关联想法。"""
     col = _get_collection()
     if not col:
         return _no_palace()
@@ -305,7 +338,7 @@ def tool_traverse_graph(start_room: str, max_hops: int = 2):
 
 
 def tool_find_tunnels(wing_a: str = None, wing_b: str = None):
-    """Find rooms that bridge two wings — the hallways connecting domains."""
+    """查找连接两个翼的房间——连通不同领域的走廊。"""
     col = _get_collection()
     if not col:
         return _no_palace()
@@ -313,20 +346,20 @@ def tool_find_tunnels(wing_a: str = None, wing_b: str = None):
 
 
 def tool_graph_stats():
-    """Palace graph overview: nodes, tunnels, edges, connectivity."""
+    """宫殿图概览：节点、隧道、边、连通性。"""
     col = _get_collection()
     if not col:
         return _no_palace()
     return graph_stats(col=col)
 
 
-# ==================== WRITE TOOLS ====================
+# ==================== 写入工具 ====================
 
 
 def tool_add_drawer(
     wing: str, room: str, content: str, source_file: str = None, added_by: str = "mcp"
 ):
-    """File verbatim content into a wing/room. Checks for duplicates first."""
+    """将原文内容归档到翼/房间。会先检查重复。"""
     try:
         wing = sanitize_name(wing, "wing")
         room = sanitize_name(room, "room")
@@ -352,7 +385,7 @@ def tool_add_drawer(
         },
     )
 
-    # Idempotency: if the deterministic ID already exists, return success as a no-op.
+    # 幂等性：如果确定性 ID 已存在，直接返回成功（无操作）。
     try:
         existing = col.get(ids=[drawer_id])
         if existing and existing["ids"]:
@@ -382,7 +415,7 @@ def tool_add_drawer(
 
 
 def tool_delete_drawer(drawer_id: str):
-    """Delete a single drawer by ID."""
+    """按 ID 删除单个抽屉。"""
     col = _get_collection()
     if not col:
         return _no_palace()
@@ -390,7 +423,7 @@ def tool_delete_drawer(drawer_id: str):
     if not existing["ids"]:
         return {"success": False, "error": f"Drawer not found: {drawer_id}"}
 
-    # Log the deletion with the content being removed for audit trail
+    # 记录删除操作及被删内容，用于审计跟踪
     deleted_content = existing.get("documents", [""])[0] if existing.get("documents") else ""
     deleted_meta = existing.get("metadatas", [{}])[0] if existing.get("metadatas") else {}
     _wal_log(
@@ -410,11 +443,11 @@ def tool_delete_drawer(drawer_id: str):
         return {"success": False, "error": str(e)}
 
 
-# ==================== KNOWLEDGE GRAPH ====================
+# ==================== 知识图谱 ====================
 
 
 def tool_kg_query(entity: str, as_of: str = None, direction: str = "both"):
-    """Query the knowledge graph for an entity's relationships."""
+    """查询知识图谱中实体的关系。"""
     results = _kg.query_entity(entity, as_of=as_of, direction=direction)
     return {"entity": entity, "as_of": as_of, "facts": results, "count": len(results)}
 
@@ -422,7 +455,7 @@ def tool_kg_query(entity: str, as_of: str = None, direction: str = "both"):
 def tool_kg_add(
     subject: str, predicate: str, object: str, valid_from: str = None, source_closet: str = None
 ):
-    """Add a relationship to the knowledge graph."""
+    """向知识图谱添加关系。"""
     try:
         subject = sanitize_name(subject, "subject")
         predicate = sanitize_name(predicate, "predicate")
@@ -447,7 +480,7 @@ def tool_kg_add(
 
 
 def tool_kg_invalidate(subject: str, predicate: str, object: str, ended: str = None):
-    """Mark a fact as no longer true (set end date)."""
+    """将事实标记为不再有效（设置结束日期）。"""
     _wal_log(
         "kg_invalidate",
         {"subject": subject, "predicate": predicate, "object": object, "ended": ended},
@@ -461,26 +494,25 @@ def tool_kg_invalidate(subject: str, predicate: str, object: str, ended: str = N
 
 
 def tool_kg_timeline(entity: str = None):
-    """Get chronological timeline of facts, optionally for one entity."""
+    """获取事实的时间线，可选择指定实体。"""
     results = _kg.timeline(entity)
     return {"entity": entity or "all", "timeline": results, "count": len(results)}
 
 
 def tool_kg_stats():
-    """Knowledge graph overview: entities, triples, relationship types."""
+    """知识图谱概览：实体、三元组、关系类型。"""
     return _kg.stats()
 
 
-# ==================== AGENT DIARY ====================
+# ==================== Agent 日记 ====================
 
 
-def tool_diary_write(agent_name: str, entry: str, topic: str = "general"):
+def tool_diary_write(agent_name: str, entry: str, topic: str = "general", index: int = None, session_id: str = None):
     """
-    Write a diary entry for this agent. Each agent gets its own wing
-    with a diary room. Entries are timestamped and accumulate over time.
+    为此 agent 写入日记条目。每个 agent 拥有自己的翼和日记房间。
+    条目带有时间戳，随时间累积。
 
-    This is the agent's personal journal — observations, thoughts,
-    what it worked on, what it noticed, what it thinks matters.
+    这是 agent 的个人日志——观察、想法、工作内容、注意到的事物、认为重要的事。
     """
     try:
         agent_name = sanitize_name(agent_name, "agent_name")
@@ -508,42 +540,205 @@ def tool_diary_write(agent_name: str, entry: str, topic: str = "general"):
     )
 
     try:
-        # TODO: Future versions should expand AAAK before embedding to improve
-        # semantic search quality. For now, store raw AAAK in metadata so it's
-        # preserved, and keep the document as-is for embedding (even though
-        # compressed AAAK degrades embedding quality).
+        metadata = {
+            "wing": wing,
+            "room": room,
+            "hall": "hall_diary",
+            "topic": topic,
+            "type": "diary_entry",
+            "agent": agent_name,
+            "filed_at": now.isoformat(),
+            "date": now.strftime("%Y-%m-%d"),
+        }
+        if index is not None:
+            metadata["index"] = index
+        if session_id:
+            metadata["session_id"] = session_id
+
         col.add(
             ids=[entry_id],
             documents=[entry],
-            metadatas=[
-                {
-                    "wing": wing,
-                    "room": room,
-                    "hall": "hall_diary",
-                    "topic": topic,
-                    "type": "diary_entry",
-                    "agent": agent_name,
-                    "filed_at": now.isoformat(),
-                    "date": now.strftime("%Y-%m-%d"),
-                }
-            ],
+            metadatas=[metadata],
         )
         logger.info(f"Diary entry: {entry_id} → {wing}/diary/{topic}")
-        return {
+        result = {
             "success": True,
             "entry_id": entry_id,
             "agent": agent_name,
             "topic": topic,
             "timestamp": now.isoformat(),
         }
+        if index is not None:
+            result["index"] = index
+        if session_id:
+            result["session_id"] = session_id
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def tool_extract_session(session_log_path: str):
+    """
+    从 Copilot 会话的 JSONL 日志中提取用户问题和 agent 回复。
+    返回结构化的对话内容，供总结使用。
+    """
+    from pathlib import Path
+
+    log_path = Path(session_log_path)
+    if not log_path.exists():
+        return {"success": False, "error": f"Session log not found: {session_log_path}"}
+    if not log_path.suffix == ".jsonl":
+        return {"success": False, "error": "Expected a .jsonl file"}
+    # 安全检查：限制文件大小（防止读取过大文件）
+    file_size = log_path.stat().st_size
+    if file_size > 10 * 1024 * 1024:  # 10MB
+        return {"success": False, "error": "Session log too large (>10MB)"}
+
+    try:
+        messages = []
+        session_id = log_path.stem
+        with open(log_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                obj = json.loads(line)
+                msg_type = obj.get("type", "")
+                data = obj.get("data", {})
+
+                if msg_type == "user.message":
+                    content = data.get("content", "")
+                    if content:
+                        messages.append({"role": "user", "content": content})
+                elif msg_type == "assistant.message":
+                    content = data.get("content", "")
+                    if content:
+                        messages.append({"role": "assistant", "content": content})
+
+        return {
+            "success": True,
+            "session_id": session_id,
+            "message_count": len(messages),
+            "messages": messages,
+        }
+    except json.JSONDecodeError as e:
+        return {"success": False, "error": f"JSON parse error: {e}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def tool_ingest_session(session_log_path: str, agent_name: str = "copilot"):
+    """
+    将会话的 JSONL 日志按 Q&A 对逐条入库到 ChromaDB。
+    每个 Q&A 对（用户提问 + agent 回复）为一条独立记录，
+    同一 session 的记录通过 session_id 关联，通过 index 区分顺序。
+    用于 hook 在新 session 开启时自动入库上一个 session 的对话内容。
+    """
+    from pathlib import Path
+
+    log_path = Path(session_log_path)
+    if not log_path.exists():
+        return {"success": False, "error": f"Session log not found: {session_log_path}"}
+    if not log_path.suffix == ".jsonl":
+        return {"success": False, "error": "Expected a .jsonl file"}
+    file_size = log_path.stat().st_size
+    if file_size > 10 * 1024 * 1024:  # 10MB
+        return {"success": False, "error": "Session log too large (>10MB)"}
+
+    col = _get_collection(create=True)
+    if not col:
+        return _no_palace()
+
+    try:
+        session_id = log_path.stem
+        wing = f"wing_{agent_name.lower().replace(' ', '_')}"
+        room = "conversation"
+        now = datetime.now()
+
+        # 解析 JSONL，组装 Q&A 对
+        qa_pairs = []
+        current_question = None
+        current_answers = []
+
+        with open(log_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                obj = json.loads(line)
+                msg_type = obj.get("type", "")
+                data = obj.get("data", {})
+
+                if msg_type == "user.message":
+                    # 遇到新问题时，先保存上一个 Q&A 对
+                    if current_question is not None:
+                        answer_text = "\n".join(current_answers) if current_answers else ""
+                        qa_pairs.append(
+                            {"question": current_question, "answer": answer_text}
+                        )
+                    current_question = data.get("content", "")
+                    current_answers = []
+                elif msg_type == "assistant.message":
+                    content = data.get("content", "")
+                    if content:
+                        current_answers.append(content)
+
+        # 保存最后一个 Q&A 对
+        if current_question is not None:
+            answer_text = "\n".join(current_answers) if current_answers else ""
+            qa_pairs.append({"question": current_question, "answer": answer_text})
+
+        if not qa_pairs:
+            return {"success": True, "session_id": session_id, "ingested": 0, "message": "无有效 Q&A 对"}
+
+        # 逐条入库
+        ingested = 0
+        for idx, qa in enumerate(qa_pairs, start=1):
+            content = f"Q: {qa['question']}\nA: {qa['answer']}"
+            entry_id = (
+                f"convo_{session_id}_{idx:03d}_"
+                f"{hashlib.sha256(qa['question'][:50].encode()).hexdigest()[:12]}"
+            )
+
+            metadata = {
+                "wing": wing,
+                "room": room,
+                "type": "conversation",
+                "agent": agent_name,
+                "session_id": session_id,
+                "index": idx,
+                "filed_at": now.isoformat(),
+                "date": now.strftime("%Y-%m-%d"),
+            }
+
+            col.add(ids=[entry_id], documents=[content], metadatas=[metadata])
+            ingested += 1
+
+        _wal_log(
+            "ingest_session",
+            {
+                "session_id": session_id,
+                "agent_name": agent_name,
+                "qa_count": ingested,
+            },
+        )
+
+        return {
+            "success": True,
+            "session_id": session_id,
+            "ingested": ingested,
+            "wing": wing,
+            "room": room,
+        }
+    except json.JSONDecodeError as e:
+        return {"success": False, "error": f"JSON parse error: {e}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
 def tool_diary_read(agent_name: str, last_n: int = 10):
     """
-    Read an agent's recent diary entries. Returns the last N entries
-    in chronological order — the agent's personal journal.
+    读取 agent 的最近日记条目。按时间顺序返回最近 N 条。
     """
     wing = f"wing_{agent_name.lower().replace(' ', '_')}"
     col = _get_collection()
@@ -558,9 +753,9 @@ def tool_diary_read(agent_name: str, last_n: int = 10):
         )
 
         if not results["ids"]:
-            return {"agent": agent_name, "entries": [], "message": "No diary entries yet."}
+            return {"agent": agent_name, "entries": [], "message": "暂无日记条目。"}
 
-        # Combine and sort by timestamp
+        # 合并并按时间戳排序
         entries = []
         for doc, meta in zip(results["documents"], results["metadatas"]):
             entries.append(
@@ -585,55 +780,50 @@ def tool_diary_read(agent_name: str, last_n: int = 10):
         return {"error": str(e)}
 
 
-# ==================== MCP PROTOCOL ====================
+# ==================== MCP 协议 ====================
 
 TOOLS = {
     "mempalace_status": {
-        "description": "Palace overview — total drawers, wing and room counts",
+        "description": "宫殿概览 — drawer 总数、wing 和 room 数量",
         "input_schema": {"type": "object", "properties": {}},
         "handler": tool_status,
     },
     "mempalace_list_wings": {
-        "description": "List all wings with drawer counts",
+        "description": "列出所有 wing 及其 drawer 数量",
         "input_schema": {"type": "object", "properties": {}},
         "handler": tool_list_wings,
     },
     "mempalace_list_rooms": {
-        "description": "List rooms within a wing (or all rooms if no wing given)",
+        "description": "列出某 wing 内的 room（不指定 wing 则列出所有 room）",
         "input_schema": {
             "type": "object",
             "properties": {
-                "wing": {"type": "string", "description": "Wing to list rooms for (optional)"},
+                "wing": {"type": "string", "description": "要列出 room 的 wing（可选）"},
             },
         },
         "handler": tool_list_rooms,
     },
     "mempalace_get_taxonomy": {
-        "description": "Full taxonomy: wing → room → drawer count",
+        "description": "完整分类：wing → room → drawer 数量",
         "input_schema": {"type": "object", "properties": {}},
         "handler": tool_get_taxonomy,
     },
-    "mempalace_get_aaak_spec": {
-        "description": "Get the AAAK dialect specification — the compressed memory format MemPalace uses. Call this if you need to read or write AAAK-compressed memories.",
-        "input_schema": {"type": "object", "properties": {}},
-        "handler": tool_get_aaak_spec,
-    },
     "mempalace_kg_query": {
-        "description": "Query the knowledge graph for an entity's relationships. Returns typed facts with temporal validity. E.g. 'Max' → child_of Alice, loves chess, does swimming. Filter by date with as_of to see what was true at a point in time.",
+        "description": "查询知识图谱中某实体的关系。返回带时间有效性的类型化事实。例如 'Max' → child_of Alice, loves chess, does swimming。使用 as_of 按日期过滤，查看某时间点的有效事实。",
         "input_schema": {
             "type": "object",
             "properties": {
                 "entity": {
                     "type": "string",
-                    "description": "Entity to query (e.g. 'Max', 'MyProject', 'Alice')",
+                    "description": "要查询的实体（如 'Max'、'MyProject'、'Alice'）",
                 },
                 "as_of": {
                     "type": "string",
-                    "description": "Date filter — only facts valid at this date (YYYY-MM-DD, optional)",
+                    "description": "日期过滤 — 仅返回该日期有效的事实（YYYY-MM-DD，可选）",
                 },
                 "direction": {
                     "type": "string",
-                    "description": "outgoing (entity→?), incoming (?→entity), or both (default: both)",
+                    "description": "outgoing（实体→?）、incoming（?→实体）或 both（默认：both）",
                 },
             },
             "required": ["entity"],
@@ -641,23 +831,23 @@ TOOLS = {
         "handler": tool_kg_query,
     },
     "mempalace_kg_add": {
-        "description": "Add a fact to the knowledge graph. Subject → predicate → object with optional time window. E.g. ('Max', 'started_school', 'Year 7', valid_from='2026-09-01').",
+        "description": "向知识图谱添加事实。主体 → 谓词 → 客体，可附带时间窗口。例如 ('Max', 'started_school', 'Year 7', valid_from='2026-09-01')。",
         "input_schema": {
             "type": "object",
             "properties": {
-                "subject": {"type": "string", "description": "The entity doing/being something"},
+                "subject": {"type": "string", "description": "执行动作或具有属性的实体"},
                 "predicate": {
                     "type": "string",
-                    "description": "The relationship type (e.g. 'loves', 'works_on', 'daughter_of')",
+                    "description": "关系类型（如 'loves'、'works_on'、'daughter_of'）",
                 },
-                "object": {"type": "string", "description": "The entity being connected to"},
+                "object": {"type": "string", "description": "被关联的实体"},
                 "valid_from": {
                     "type": "string",
-                    "description": "When this became true (YYYY-MM-DD, optional)",
+                    "description": "事实生效日期（YYYY-MM-DD，可选）",
                 },
                 "source_closet": {
                     "type": "string",
-                    "description": "Closet ID where this fact appears (optional)",
+                    "description": "该事实出处的 drawer ID（可选）",
                 },
             },
             "required": ["subject", "predicate", "object"],
@@ -665,16 +855,16 @@ TOOLS = {
         "handler": tool_kg_add,
     },
     "mempalace_kg_invalidate": {
-        "description": "Mark a fact as no longer true. E.g. ankle injury resolved, job ended, moved house.",
+        "description": "将事实标记为不再有效。E.g. ankle injury resolved, job ended, moved house.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "subject": {"type": "string", "description": "Entity"},
-                "predicate": {"type": "string", "description": "Relationship"},
-                "object": {"type": "string", "description": "Connected entity"},
+                "subject": {"type": "string", "description": "实体"},
+                "predicate": {"type": "string", "description": "关系"},
+                "object": {"type": "string", "description": "被关联的实体"},
                 "ended": {
                     "type": "string",
-                    "description": "When it stopped being true (YYYY-MM-DD, default: today)",
+                    "description": "失效日期（YYYY-MM-DD，默认：今天）",
                 },
             },
             "required": ["subject", "predicate", "object"],
@@ -682,35 +872,35 @@ TOOLS = {
         "handler": tool_kg_invalidate,
     },
     "mempalace_kg_timeline": {
-        "description": "Chronological timeline of facts. Shows the story of an entity (or everything) in order.",
+        "description": "按时间线展示事实。按时间顺序展示某实体（或全部）的故事。",
         "input_schema": {
             "type": "object",
             "properties": {
                 "entity": {
                     "type": "string",
-                    "description": "Entity to get timeline for (optional — omit for full timeline)",
+                    "description": "要查看时间线的实体（可选 — 不填则展示全部）",
                 },
             },
         },
         "handler": tool_kg_timeline,
     },
     "mempalace_kg_stats": {
-        "description": "Knowledge graph overview: entities, triples, current vs expired facts, relationship types.",
+        "description": "知识图谱概览：实体数、triple 数、当前/已失效事实、关系类型。",
         "input_schema": {"type": "object", "properties": {}},
         "handler": tool_kg_stats,
     },
     "mempalace_traverse": {
-        "description": "Walk the palace graph from a room. Shows connected ideas across wings — the tunnels. Like following a thread through the palace: start at 'chromadb-setup' in wing_code, discover it connects to wing_myproject (planning) and wing_user (feelings about it).",
+        "description": "从某 room 出发遍历宫殿图。展示跨 wing 的关联想法 — 即隧道。如同在宫殿中循线而行：从 wing_code 的 'chromadb-setup' 出发，发现它连接到 wing_myproject（规划）和 wing_user（感受）。",
         "input_schema": {
             "type": "object",
             "properties": {
                 "start_room": {
                     "type": "string",
-                    "description": "Room to start from (e.g. 'chromadb-setup', 'riley-school')",
+                    "description": "起始 room（如 'chromadb-setup'、'riley-school'）",
                 },
                 "max_hops": {
                     "type": "integer",
-                    "description": "How many connections to follow (default: 2)",
+                    "description": "跟随连接的跳数（默认：2）",
                 },
             },
             "required": ["start_room"],
@@ -718,44 +908,44 @@ TOOLS = {
         "handler": tool_traverse_graph,
     },
     "mempalace_find_tunnels": {
-        "description": "Find rooms that bridge two wings — the hallways connecting different domains. E.g. what topics connect wing_code to wing_team?",
+        "description": "查找连接两个 wing 的 room — 连通不同领域的走廊。例如哪些主题连接了 wing_code 和 wing_team？",
         "input_schema": {
             "type": "object",
             "properties": {
-                "wing_a": {"type": "string", "description": "First wing (optional)"},
-                "wing_b": {"type": "string", "description": "Second wing (optional)"},
+                "wing_a": {"type": "string", "description": "第一个 wing（可选）"},
+                "wing_b": {"type": "string", "description": "第二个 wing（可选）"},
             },
         },
         "handler": tool_find_tunnels,
     },
     "mempalace_graph_stats": {
-        "description": "Palace graph overview: total rooms, tunnel connections, edges between wings.",
+        "description": "宫殿图概览：room 总数、隧道连接、wing 间边数。",
         "input_schema": {"type": "object", "properties": {}},
         "handler": tool_graph_stats,
     },
     "mempalace_search": {
-        "description": "Semantic search. Returns verbatim drawer content with similarity scores.",
+        "description": "语义搜索。返回 drawer 原文内容及相似度分数。",
         "input_schema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "What to search for"},
-                "limit": {"type": "integer", "description": "Max results (default 5)"},
-                "wing": {"type": "string", "description": "Filter by wing (optional)"},
-                "room": {"type": "string", "description": "Filter by room (optional)"},
+                "query": {"type": "string", "description": "搜索内容"},
+                "limit": {"type": "integer", "description": "最大返回数量（默认 5）"},
+                "wing": {"type": "string", "description": "按 wing 过滤（可选）"},
+                "room": {"type": "string", "description": "按 room 过滤（可选）"},
             },
             "required": ["query"],
         },
         "handler": tool_search,
     },
     "mempalace_check_duplicate": {
-        "description": "Check if content already exists in the palace before filing",
+        "description": "归档前检查内容是否已存在于宫殿中",
         "input_schema": {
             "type": "object",
             "properties": {
-                "content": {"type": "string", "description": "Content to check"},
+                "content": {"type": "string", "description": "要检查的内容"},
                 "threshold": {
                     "type": "number",
-                    "description": "Similarity threshold 0-1 (default 0.9)",
+                    "description": "相似度阈值 0-1（默认 0.9）",
                 },
             },
             "required": ["content"],
@@ -763,53 +953,61 @@ TOOLS = {
         "handler": tool_check_duplicate,
     },
     "mempalace_add_drawer": {
-        "description": "File verbatim content into the palace. Checks for duplicates first.",
+        "description": "将原文内容归档到宫殿中。会先检查是否重复（添加 drawer）。",
         "input_schema": {
             "type": "object",
             "properties": {
-                "wing": {"type": "string", "description": "Wing (project name)"},
+                "wing": {"type": "string", "description": "wing（项目名称）"},
                 "room": {
                     "type": "string",
-                    "description": "Room (aspect: backend, decisions, meetings...)",
+                    "description": "room（方面：backend、decisions、meetings...）",
                 },
                 "content": {
                     "type": "string",
-                    "description": "Verbatim content to store — exact words, never summarized",
+                    "description": "要存储的原文内容 — 原话原文，不做总结",
                 },
-                "source_file": {"type": "string", "description": "Where this came from (optional)"},
-                "added_by": {"type": "string", "description": "Who is filing this (default: mcp)"},
+                "source_file": {"type": "string", "description": "内容来源（可选）"},
+                "added_by": {"type": "string", "description": "归档人（默认：mcp）"},
             },
             "required": ["wing", "room", "content"],
         },
         "handler": tool_add_drawer,
     },
     "mempalace_delete_drawer": {
-        "description": "Delete a drawer by ID. Irreversible.",
+        "description": "按 ID 删除 drawer。不可撤销。",
         "input_schema": {
             "type": "object",
             "properties": {
-                "drawer_id": {"type": "string", "description": "ID of the drawer to delete"},
+                "drawer_id": {"type": "string", "description": "要删除的 drawer ID"},
             },
             "required": ["drawer_id"],
         },
         "handler": tool_delete_drawer,
     },
     "mempalace_diary_write": {
-        "description": "Write to your personal agent diary in AAAK format. Your observations, thoughts, what you worked on, what matters. Each agent has their own diary with full history. Write in AAAK for compression — e.g. 'SESSION:2026-04-04|built.palace.graph+diary.tools|ALC.req:agent.diaries.in.aaak|★★★'. Use entity codes from the AAAK spec.",
+        "description": "写入个人 agent 日记。每条 diary 只覆盖一个主题，同一会话按 index 编号拆分为多条。topic 为该条的关键词（不超过两个词）。",
         "input_schema": {
             "type": "object",
             "properties": {
                 "agent_name": {
                     "type": "string",
-                    "description": "Your name — each agent gets their own diary wing",
+                    "description": "agent 名称 — 每个 agent 有独立的日记 wing",
                 },
                 "entry": {
                     "type": "string",
-                    "description": "Your diary entry in AAAK format — compressed, entity-coded, emotion-marked",
+                    "description": "日记内容，自然语言中文，只覆盖一个主题",
                 },
                 "topic": {
                     "type": "string",
-                    "description": "Topic tag (optional, default: general)",
+                    "description": "该条日记的关键词标签，不超过两个词（如 'MCP工具' 或 '日记机制'）",
+                },
+                "index": {
+                    "type": "integer",
+                    "description": "同一会话中该条 diary 的序号（从 1 开始）",
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "会话 ID，用于标识同一次会话的多条 diary",
                 },
             },
             "required": ["agent_name", "entry"],
@@ -817,22 +1015,54 @@ TOOLS = {
         "handler": tool_diary_write,
     },
     "mempalace_diary_read": {
-        "description": "Read your recent diary entries (in AAAK). See what past versions of yourself recorded — your journal across sessions.",
+        "description": "读取最近的日记条目。查看过去的自己记录了什么 — 跨会话的个人日志。",
         "input_schema": {
             "type": "object",
             "properties": {
                 "agent_name": {
                     "type": "string",
-                    "description": "Your name — each agent gets their own diary wing",
+                    "description": "你的名称 — 每个 agent 有独立的日记 wing",
                 },
                 "last_n": {
                     "type": "integer",
-                    "description": "Number of recent entries to read (default: 10)",
+                    "description": "读取最近条目的数量（默认：10）",
                 },
             },
             "required": ["agent_name"],
         },
         "handler": tool_diary_read,
+    },
+    "mempalace_extract_session": {
+        "description": "从当前会话的 JSONL 日志中提取用户问题和 agent 回复。用于会话结束时获取全量对话内容以便总结。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_log_path": {
+                    "type": "string",
+                    "description": "会话 JSONL 日志文件的完整路径",
+                },
+            },
+            "required": ["session_log_path"],
+        },
+        "handler": tool_extract_session,
+    },
+    "mempalace_ingest_session": {
+        "description": "将会话 JSONL 日志按 Q&A 对逐条入库。每个 Q&A 为一条独立记录，同一 session 通过 session_id 关联、index 区分顺序。用于 hook 在新 session 开启时自动入库上一个 session 的对话。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_log_path": {
+                    "type": "string",
+                    "description": "上一个会话的 JSONL 日志文件完整路径",
+                },
+                "agent_name": {
+                    "type": "string",
+                    "description": "agent 名称（默认：copilot）",
+                },
+            },
+            "required": ["session_log_path"],
+        },
+        "handler": tool_ingest_session,
     },
 }
 
@@ -888,9 +1118,9 @@ def handle_request(request):
                 "id": req_id,
                 "error": {"code": -32601, "message": f"Unknown tool: {tool_name}"},
             }
-        # Coerce argument types based on input_schema.
-        # MCP JSON transport may deliver integers as floats or strings;
-        # ChromaDB and Python slicing require native int.
+        # 根据 input_schema 强制转换参数类型。
+        # MCP JSON 传输可能将整数作为浮点数或字符串传递；
+        # ChromaDB 和 Python 切片需要原生 int。
         schema_props = TOOLS[tool_name]["input_schema"].get("properties", {})
         for key, value in list(tool_args.items()):
             prop_schema = schema_props.get(key, {})
@@ -922,6 +1152,12 @@ def handle_request(request):
 
 
 def main():
+    # Ensure UTF-8 for stdio on Windows (prevents encoding errors with CJK text)
+    if sys.platform == "win32":
+        for stream in ("stdin", "stdout", "stderr"):
+            s = getattr(sys, stream)
+            if hasattr(s, "reconfigure"):
+                s.reconfigure(encoding="utf-8")
     logger.info("MemPalace MCP Server starting...")
     while True:
         try:

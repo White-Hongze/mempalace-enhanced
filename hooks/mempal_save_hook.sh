@@ -72,7 +72,11 @@ import json
 import os
 import re
 
-raw = base64.b64decode(os.environ.get("HOOK_INPUT_B64", "")).decode("utf-8")
+blob = base64.b64decode(os.environ.get("HOOK_INPUT_B64", ""))
+try:
+    raw = blob.decode("utf-8")
+except UnicodeDecodeError:
+    raw = blob.decode("gbk", errors="replace")
 data = json.loads(raw or "{}")
 sid = data.get("session_id") or data.get("sessionId", "unknown")
 sha = data.get("stop_hook_active", False)
@@ -106,12 +110,22 @@ if [ -f "$TRANSCRIPT_PATH" ]; then
     EXCHANGE_COUNT=$(python3 - "$TRANSCRIPT_PATH" <<'PYEOF'
 import json, sys
 count = 0
-with open(sys.argv[1]) as f:
+with open(sys.argv[1], encoding='utf-8', errors='ignore') as f:
     for line in f:
         try:
             entry = json.loads(line)
+            # VS Code transcript format
+            if entry.get('type') == 'user.message':
+                data = entry.get('data', {})
+                content = data.get('content', '') if isinstance(data, dict) else ''
+                if isinstance(content, str) and '<command-message>' in content:
+                    continue
+                count += 1
+                continue
+
+            # Legacy Claude/Codex transcript format
             msg = entry.get('message', {})
-            if isinstance(msg, dict) and msg.get('role') == 'user':
+            if isinstance(msg, dict) and msg.get('role') in ('user', 'human'):
                 content = msg.get('content', '')
                 if isinstance(content, str) and '<command-message>' in content:
                     continue
@@ -136,6 +150,9 @@ SINCE_LAST=$((EXCHANGE_COUNT - LAST_SAVE))
 
 # Log for debugging (check ~/.mempalace/hook_state/hook.log)
 echo "[$(date '+%H:%M:%S')] Session $SESSION_ID: $EXCHANGE_COUNT exchanges, $SINCE_LAST since last save" >> "$STATE_DIR/hook.log"
+
+# Persist latest session metadata so SessionStart can autosave the previous window.
+echo "$SESSION_ID|$TRANSCRIPT_PATH" > "$STATE_DIR/last_session_meta"
 
 # Time to save?
 if [ "$SINCE_LAST" -ge "$SAVE_INTERVAL" ] && [ "$EXCHANGE_COUNT" -gt 0 ]; then

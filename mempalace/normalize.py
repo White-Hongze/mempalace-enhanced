@@ -7,6 +7,7 @@ Supported:
     - Claude.ai JSON export
     - ChatGPT conversations.json
     - Claude Code JSONL
+    - VS Code Copilot Chat JSONL
     - OpenAI Codex CLI JSONL
     - Slack JSON export
     - Plain text (pass through for paragraph chunking)
@@ -18,6 +19,49 @@ import json
 import os
 from pathlib import Path
 from typing import Optional
+
+
+def _looks_like_jsonl(content: str) -> bool:
+    """Heuristic: detect JSONL by parsing multiple non-empty lines as JSON objects."""
+    lines = [line.strip() for line in content.split("\n") if line.strip()]
+    if len(lines) < 2:
+        return False
+
+    sample = lines[:20]
+    parsed = 0
+    for line in sample:
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            return False
+        if isinstance(obj, dict):
+            parsed += 1
+
+    return parsed >= 2
+
+
+def detect_file_type(filepath: str, content: str) -> str:
+    """Detect content type for normalization routing.
+
+    Returns one of: transcript | jsonl | json | text
+    """
+    lines = content.split("\n")
+    if sum(1 for line in lines if line.strip().startswith(">")) >= 3:
+        return "transcript"
+
+    ext = Path(filepath).suffix.lower()
+    if ext == ".jsonl":
+        return "jsonl"
+    if ext == ".json":
+        return "json"
+
+    if content.strip()[:1] in ("{", "["):
+        return "json"
+
+    if _looks_like_jsonl(content):
+        return "jsonl"
+
+    return "text"
 
 
 def normalize(filepath: str) -> str:
@@ -40,43 +84,66 @@ def normalize(filepath: str) -> str:
     if not content.strip():
         return content
 
-    # Already has > markers — pass through
-    lines = content.split("\n")
-    if sum(1 for line in lines if line.strip().startswith(">")) >= 3:
+    file_type = detect_file_type(filepath, content)
+    if file_type == "transcript":
         return content
 
-    # Try JSON normalization
-    ext = Path(filepath).suffix.lower()
-    if ext in (".json", ".jsonl") or content.strip()[:1] in ("{", "["):
-        normalized = _try_normalize_json(content)
+    processor = CONTENT_PROCESSORS.get(file_type)
+    if processor:
+        normalized = processor(content)
         if normalized:
             return normalized
 
     return content
 
 
-def _try_normalize_json(content: str) -> Optional[str]:
-    """Try all known JSON chat schemas."""
+def _process_jsonl(content: str) -> Optional[str]:
+    """Run JSONL parsers in order until one matches."""
+    for parser in JSONL_PROCESSORS:
+        normalized = parser(content)
+        if normalized:
+            return normalized
+    return None
 
-    normalized = _try_claude_code_jsonl(content)
-    if normalized:
-        return normalized
 
-    normalized = _try_codex_jsonl(content)
-    if normalized:
-        return normalized
-
+def _process_json(content: str) -> Optional[str]:
+    """Run JSON object/array parsers after decoding once."""
     try:
         data = json.loads(content)
     except json.JSONDecodeError:
         return None
 
-    for parser in (_try_claude_ai_json, _try_chatgpt_json, _try_slack_json):
+    for parser in JSON_PROCESSORS:
         normalized = parser(data)
         if normalized:
             return normalized
-
     return None
+
+
+JSONL_PROCESSORS = (
+    lambda content: _try_claude_code_jsonl(content),
+    lambda content: _try_copilot_jsonl(content),
+    lambda content: _try_codex_jsonl(content),
+)
+
+JSON_PROCESSORS = (
+    lambda data: _try_claude_ai_json(data),
+    lambda data: _try_chatgpt_json(data),
+    lambda data: _try_slack_json(data),
+)
+
+CONTENT_PROCESSORS = {
+    "jsonl": _process_jsonl,
+    "json": _process_json,
+}
+
+
+def _try_normalize_json(content: str) -> Optional[str]:
+    """Try all known JSON chat schemas."""
+    normalized = _process_jsonl(content)
+    if normalized:
+        return normalized
+    return _process_json(content)
 
 
 def _try_claude_code_jsonl(content: str) -> Optional[str]:
@@ -149,6 +216,56 @@ def _try_codex_jsonl(content: str) -> Optional[str]:
             messages.append(("assistant", text))
 
     if len(messages) >= 2 and has_session_meta:
+        return _messages_to_transcript(messages)
+    return None
+
+
+def _try_copilot_jsonl(content: str) -> Optional[str]:
+    """VS Code Copilot Chat transcript JSONL.
+
+    Expected line examples:
+      {"type": "session.start", "data": {"producer": "copilot-agent", ...}}
+      {"type": "user.message", "data": {"content": "..."}}
+      {"type": "assistant.message", "data": {"content": "..."}}
+
+    Ignores tool.* and assistant.turn_* events.
+    """
+    lines = [line.strip() for line in content.strip().split("\n") if line.strip()]
+    messages = []
+    has_copilot_signature = False
+
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+
+        entry_type = entry.get("type", "")
+        data = entry.get("data", {})
+
+        if entry_type == "session.start":
+            if isinstance(data, dict) and str(data.get("producer", "")).startswith("copilot"):
+                has_copilot_signature = True
+            continue
+
+        if entry_type not in ("user.message", "assistant.message"):
+            continue
+        if not isinstance(data, dict):
+            continue
+
+        has_copilot_signature = True
+        text = _extract_content(data.get("content", ""))
+        if not text:
+            continue
+
+        if entry_type == "user.message":
+            messages.append(("user", text))
+        else:
+            messages.append(("assistant", text))
+
+    if len(messages) >= 2 and has_copilot_signature:
         return _messages_to_transcript(messages)
     return None
 

@@ -2,14 +2,17 @@ import json
 from unittest.mock import patch
 
 from mempalace.normalize import (
+    CONTENT_PROCESSORS,
     _extract_content,
     _messages_to_transcript,
     _try_chatgpt_json,
     _try_claude_ai_json,
     _try_claude_code_jsonl,
+    _try_copilot_jsonl,
     _try_codex_jsonl,
     _try_normalize_json,
     _try_slack_json,
+    detect_file_type,
     normalize,
 )
 
@@ -71,6 +74,41 @@ def test_normalize_whitespace_only(tmp_path):
     f.write_text("   \n  \n  ")
     result = normalize(str(f))
     assert result.strip() == ""
+
+
+def test_normalize_copilot_jsonl(tmp_path):
+    lines = [
+        json.dumps({"type": "session.start", "data": {"producer": "copilot-agent"}}),
+        json.dumps({"type": "user.message", "data": {"content": "Explain tunnel traverse"}}),
+        json.dumps({"type": "assistant.message", "data": {"content": "It links rooms across wings."}}),
+    ]
+    f = tmp_path / "copilot.jsonl"
+    f.write_text("\n".join(lines))
+    result = normalize(str(f))
+    assert "> Explain tunnel traverse" in result
+    assert "It links rooms across wings." in result
+
+
+def test_detect_file_type_jsonl_extension(tmp_path):
+    f = tmp_path / "sample.jsonl"
+    f.write_text('{"type":"user.message","data":{"content":"Q"}}\n')
+    assert detect_file_type(str(f), f.read_text()) == "jsonl"
+
+
+def test_detect_file_type_json_extension(tmp_path):
+    f = tmp_path / "sample.json"
+    f.write_text('[{"role":"user","content":"Q"}]')
+    assert detect_file_type(str(f), f.read_text()) == "json"
+
+
+def test_detect_file_type_transcript(tmp_path):
+    f = tmp_path / "sample.txt"
+    f.write_text("> Q1\nA1\n> Q2\nA2\n> Q3\nA3\n")
+    assert detect_file_type(str(f), f.read_text()) == "transcript"
+
+
+def test_content_processors_has_jsonl():
+    assert "jsonl" in CONTENT_PROCESSORS
 
 
 # ── _extract_content ───────────────────────────────────────────────────
@@ -219,6 +257,47 @@ def test_codex_jsonl_payload_not_dict():
     ]
     result = _try_codex_jsonl("\n".join(lines))
     assert result is not None
+
+
+# ── _try_copilot_jsonl ───────────────────────────────────────────────
+
+
+def test_copilot_jsonl_valid():
+    lines = [
+        json.dumps(
+            {
+                "type": "session.start",
+                "data": {"sessionId": "abc", "producer": "copilot-agent"},
+            }
+        ),
+        json.dumps({"type": "user.message", "data": {"content": "Q"}}),
+        json.dumps({"type": "assistant.message", "data": {"content": "A"}}),
+    ]
+    result = _try_copilot_jsonl("\n".join(lines))
+    assert result is not None
+    assert "> Q" in result
+    assert "A" in result
+
+
+def test_copilot_jsonl_ignores_tool_events():
+    lines = [
+        json.dumps({"type": "session.start", "data": {"producer": "copilot-agent"}}),
+        json.dumps({"type": "tool.execution_start", "data": {"tool": "read_file"}}),
+        json.dumps({"type": "user.message", "data": {"content": "Q"}}),
+        json.dumps({"type": "assistant.message", "data": {"content": "A"}}),
+    ]
+    result = _try_copilot_jsonl("\n".join(lines))
+    assert result is not None
+    assert "read_file" not in result
+
+
+def test_copilot_jsonl_too_few_messages():
+    lines = [
+        json.dumps({"type": "session.start", "data": {"producer": "copilot-agent"}}),
+        json.dumps({"type": "user.message", "data": {"content": "Only one"}}),
+    ]
+    result = _try_copilot_jsonl("\n".join(lines))
+    assert result is None
 
 
 # ── _try_claude_ai_json ───────────────────────────────────────────────

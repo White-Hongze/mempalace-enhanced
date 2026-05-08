@@ -135,6 +135,7 @@ def search_memories(
 
     hits = []
     for doc, meta, dist in zip(docs, metas, dists):
+        meta = meta or {}
         hits.append(
             {
                 "text": doc,
@@ -142,6 +143,8 @@ def search_memories(
                 "room": meta.get("room", "unknown"),
                 "source_file": Path(meta.get("source_file", "?")).name,
                 "similarity": round(1 - dist, 3),
+                "filed_at": meta.get("filed_at", ""),
+                "date": meta.get("date", ""),
             }
         )
 

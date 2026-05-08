@@ -1,5 +1,14 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "./hooks/mempal_sessionstart_hook.sh",
+        "windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./hooks/mempal_sessionstart_hook.ps1",
+        "cwd": ".",
+        "timeout": 30
+      }
+    ],
     "Stop": [
       {
         "type": "command",

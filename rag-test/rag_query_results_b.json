@@ -1,0 +1,118 @@
+{
+  "summary": {
+    "mcp_server": "http://8.147.57.160:15000/mcp",
+    "retrieval_mode": "BGE(dense)",
+    "top_k": 5,
+    "total_questions": 10,
+    "total_init_time_s": 0.884,
+    "total_query_time_s": 21.358,
+    "avg_init_time_s": 0.088,
+    "avg_query_time_s": 2.136,
+    "total_end_to_end_s": 22.246,
+    "total_input_tokens": 123,
+    "total_output_tokens": 12609,
+    "total_tokens": 12732
+  },
+  "per_question": {
+    "B1": {
+      "init_s": 0.0781,
+      "query_s": 2.1604,
+      "total_s": 2.2389,
+      "in_tok": 15,
+      "out_tok": 1328,
+      "hits": 5,
+      "top1_score": 0.6329,
+      "top1_source": "2.1.1 尽量缩小临界区"
+    },
+    "B2": {
+      "init_s": 0.0761,
+      "query_s": 2.0919,
+      "total_s": 2.1684,
+      "in_tok": 12,
+      "out_tok": 1322,
+      "hits": 5,
+      "top1_score": 0.6346,
+      "top1_source": "3.2.2 回调里不要做不必要的动态内存分配"
+    },
+    "B3": {
+      "init_s": 0.0923,
+      "query_s": 2.1901,
+      "total_s": 2.2828,
+      "in_tok": 13,
+      "out_tok": 1260,
+      "hits": 5,
+      "top1_score": 0.6193,
+      "top1_source": "3.3.2 明确“最新值语义”还是“全量事件语义”"
+    },
+    "B4": {
+      "init_s": 0.0832,
+      "query_s": 2.1591,
+      "total_s": 2.2428,
+      "in_tok": 10,
+      "out_tok": 1124,
+      "hits": 5,
+      "top1_score": 0.7058,
+      "top1_source": "4.1.1 参数必须在启动时完成完整校验"
+    },
+    "B5": {
+      "init_s": 0.0891,
+      "query_s": 2.1878,
+      "total_s": 2.2772,
+      "in_tok": 17,
+      "out_tok": 1302,
+      "hits": 5,
+      "top1_score": 0.5833,
+      "top1_source": "3.1.2 不要把所有逻辑写在回调里"
+    },
+    "B6": {
+      "init_s": 0.1008,
+      "query_s": 2.1258,
+      "total_s": 2.227,
+      "in_tok": 10,
+      "out_tok": 1245,
+      "hits": 5,
+      "top1_score": 0.676,
+      "top1_source": "7.1 高频路径要求"
+    },
+    "B7": {
+      "init_s": 0.11,
+      "query_s": 2.1312,
+      "total_s": 2.2416,
+      "in_tok": 10,
+      "out_tok": 1276,
+      "hits": 5,
+      "top1_score": 0.6135,
+      "top1_source": "5 错误处理与诊断规范"
+    },
+    "B8": {
+      "init_s": 0.0847,
+      "query_s": 2.0846,
+      "total_s": 2.1698,
+      "in_tok": 12,
+      "out_tok": 1291,
+      "hits": 5,
+      "top1_score": 0.6708,
+      "top1_source": "3.1.2 不要把所有逻辑写在回调里"
+    },
+    "B9": {
+      "init_s": 0.0845,
+      "query_s": 2.0964,
+      "total_s": 2.1814,
+      "in_tok": 14,
+      "out_tok": 1231,
+      "hits": 5,
+      "top1_score": 0.6225,
+      "top1_source": "3.3.2 明确“最新值语义”还是“全量事件语义”"
+    },
+    "B10": {
+      "init_s": 0.0853,
+      "query_s": 2.1302,
+      "total_s": 2.2159,
+      "in_tok": 10,
+      "out_tok": 1230,
+      "hits": 5,
+      "top1_score": 0.653,
+      "top1_source": "5.2.2 诊断必须可解释"
+    }
+  }
+}

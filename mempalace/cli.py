@@ -273,125 +273,12 @@ def cmd_mcp(args):
 
 
 def cmd_compress(args):
-    """Compress drawers in a wing using AAAK Dialect."""
-    import chromadb
-    from .dialect import Dialect
-
-    palace_path = os.path.expanduser(args.palace) if args.palace else MempalaceConfig().palace_path
-
-    # Load dialect (with optional entity config)
-    config_path = args.config
-    if not config_path:
-        for candidate in ["entities.json", os.path.join(palace_path, "entities.json")]:
-            if os.path.exists(candidate):
-                config_path = candidate
-                break
-
-    if config_path and os.path.exists(config_path):
-        dialect = Dialect.from_config(config_path)
-        print(f"  Loaded entity config: {config_path}")
-    else:
-        dialect = Dialect()
-
-    # Connect to palace
-    try:
-        client = chromadb.PersistentClient(path=palace_path)
-        col = client.get_collection("mempalace_drawers")
-    except Exception:
-        print(f"\n  No palace found at {palace_path}")
-        print("  Run: mempalace init <dir> then mempalace mine <dir>")
-        sys.exit(1)
-
-    # Query drawers in batches to avoid SQLite variable limit (~999)
-    where = {"wing": args.wing} if args.wing else None
-    _BATCH = 500
-    docs, metas, ids = [], [], []
-    offset = 0
-    while True:
-        try:
-            kwargs = {"include": ["documents", "metadatas"], "limit": _BATCH, "offset": offset}
-            if where:
-                kwargs["where"] = where
-            batch = col.get(**kwargs)
-        except Exception as e:
-            if not docs:
-                print(f"\n  Error reading drawers: {e}")
-                sys.exit(1)
-            break
-        batch_docs = batch.get("documents", [])
-        if not batch_docs:
-            break
-        docs.extend(batch_docs)
-        metas.extend(batch.get("metadatas", []))
-        ids.extend(batch.get("ids", []))
-        offset += len(batch_docs)
-        if len(batch_docs) < _BATCH:
-            break
-
-    if not docs:
-        wing_label = f" in wing '{args.wing}'" if args.wing else ""
-        print(f"\n  No drawers found{wing_label}.")
-        return
-
-    print(
-        f"\n  Compressing {len(docs)} drawers"
-        + (f" in wing '{args.wing}'" if args.wing else "")
-        + "..."
-    )
+    """[DEPRECATED] AAAK compression has been removed. Text is stored as-is in natural language."""
+    print("\n  [DEPRECATED] AAAK compression has been removed.")
+    print("  MemPalace now stores text directly in natural language without compression.")
+    print("  This command is no longer functional.")
     print()
-
-    total_original = 0
-    total_compressed = 0
-    compressed_entries = []
-
-    for doc, meta, doc_id in zip(docs, metas, ids):
-        compressed = dialect.compress(doc, metadata=meta)
-        stats = dialect.compression_stats(doc, compressed)
-
-        total_original += stats["original_chars"]
-        total_compressed += stats["compressed_chars"]
-
-        compressed_entries.append((doc_id, compressed, meta, stats))
-
-        if args.dry_run:
-            wing_name = meta.get("wing", "?")
-            room_name = meta.get("room", "?")
-            source = Path(meta.get("source_file", "?")).name
-            print(f"  [{wing_name}/{room_name}] {source}")
-            print(
-                f"    {stats['original_tokens']}t -> {stats['compressed_tokens']}t ({stats['ratio']:.1f}x)"
-            )
-            print(f"    {compressed}")
-            print()
-
-    # Store compressed versions (unless dry-run)
-    if not args.dry_run:
-        try:
-            comp_col = client.get_or_create_collection("mempalace_compressed")
-            for doc_id, compressed, meta, stats in compressed_entries:
-                comp_meta = dict(meta)
-                comp_meta["compression_ratio"] = round(stats["ratio"], 1)
-                comp_meta["original_tokens"] = stats["original_tokens"]
-                comp_col.upsert(
-                    ids=[doc_id],
-                    documents=[compressed],
-                    metadatas=[comp_meta],
-                )
-            print(
-                f"  Stored {len(compressed_entries)} compressed drawers in 'mempalace_compressed' collection."
-            )
-        except Exception as e:
-            print(f"  Error storing compressed drawers: {e}")
-            sys.exit(1)
-
-    # Summary
-    ratio = total_original / max(total_compressed, 1)
-    orig_tokens = Dialect.count_tokens("x" * total_original)
-    comp_tokens = Dialect.count_tokens("x" * total_compressed)
-    print(f"  Total: {orig_tokens:,}t -> {comp_tokens:,}t ({ratio:.1f}x compression)")
-    if args.dry_run:
-        print("  (dry run -- nothing stored)")
-
+    return
 
 def main():
     parser = argparse.ArgumentParser(
@@ -458,16 +345,16 @@ def main():
     p_search.add_argument("--room", default=None, help="Limit to one room")
     p_search.add_argument("--results", type=int, default=5, help="Number of results")
 
-    # compress
+    # compress (deprecated)
     p_compress = sub.add_parser(
-        "compress", help="Compress drawers using AAAK Dialect (~30x reduction)"
+        "compress", help="[DEPRECATED] AAAK compression has been removed"
     )
-    p_compress.add_argument("--wing", default=None, help="Wing to compress (default: all wings)")
+    p_compress.add_argument("--wing", default=None, help="(ignored)")
     p_compress.add_argument(
-        "--dry-run", action="store_true", help="Preview compression without storing"
+        "--dry-run", action="store_true", help="(ignored)"
     )
     p_compress.add_argument(
-        "--config", default=None, help="Entity config JSON (e.g. entities.json)"
+        "--config", default=None, help="(ignored)"
     )
 
     # wake-up

@@ -6,7 +6,7 @@ These hook scripts make MemPalace save automatically. No manual "save" commands 
 
 | Hook | When It Fires | What Happens |
 |------|--------------|-------------|
-| **Save Hook** | Every 15 human messages | Blocks the AI, tells it to save key topics/decisions/quotes to the palace |
+| **Save Hook** | Every 8 human messages | Blocks the AI, tells it to save key topics/decisions/quotes to the palace |
 | **PreCompact Hook** | Right before context compaction | Emergency save — forces the AI to save EVERYTHING before losing context |
 
 The AI does the actual filing — it knows the conversation context, so it classifies memories into the right wings/halls/closets. The hooks just tell it WHEN to save.
@@ -65,7 +65,7 @@ Add to `.codex/hooks.json`:
 
 Edit `mempal_save_hook.sh` to change:
 
-- **`SAVE_INTERVAL=15`** — How many human messages between saves. Lower = more frequent saves, higher = less interruption.
+- **`SAVE_INTERVAL=8`** — How many human messages between saves. Lower = more frequent saves, higher = less interruption.
 - **`STATE_DIR`** — Where hook state is stored (defaults to `~/.mempalace/hook_state/`)
 - **`MEMPAL_DIR`** — Optional. Set to a conversations directory to auto-run `mempalace mine <dir>` on each save trigger. Leave blank (default) to let the AI handle saving via the block reason message.
 
@@ -89,9 +89,9 @@ User sends message → AI responds → Claude Code fires Stop hook
                                             ↓
                                     Hook counts human messages in JSONL transcript
                                             ↓
-                              ┌─── < 15 since last save ──→ echo "{}" (let AI stop)
+                              ┌─── < 8 since last save ──→ echo "{}" (let AI stop)
                               │
-                              └─── ≥ 15 since last save ──→ {"decision": "block", "reason": "save..."}
+                              └─── ≥ 8 since last save ──→ {"decision": "block", "reason": "save..."}
                                                                     ↓
                                                             AI saves to palace
                                                                     ↓

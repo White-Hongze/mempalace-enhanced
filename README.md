@@ -2,85 +2,82 @@
 
 <img src="assets/mempalace_logo.png" alt="MemPalace" width="280">
 
-# MemPalace
+# MemPalace (Chinese-adapted version)
 
-### The highest-scoring AI memory system ever benchmarked. And it's free.
+### 个人优化版 — 面向中文用户的 AI 记忆系统
 
 <br>
 
-Every conversation you have with an AI — every decision, every debugging session, every architecture debate — disappears when the session ends. Six months of work, gone. You start over every time.
-
-Other memory systems try to fix this by letting AI decide what's worth remembering. It extracts "user prefers Postgres" and throws away the conversation where you explained *why*. MemPalace takes a different approach: **store everything, then make it findable.**
-
-**The Palace** — Ancient Greek orators memorized entire speeches by placing ideas in rooms of an imaginary building. Walk through the building, find the idea. MemPalace applies the same principle to AI memory: your conversations are organized into wings (people and projects), halls (types of memory), and rooms (specific ideas). No AI decides what matters — you keep every word, and the structure gives you a navigable map instead of a flat search index.
-
-**Raw verbatim storage** — MemPalace stores your actual exchanges in ChromaDB without summarization or extraction. The 96.6% LongMemEval result comes from this raw mode. We don't burn an LLM to decide what's "worth remembering" — we keep everything and let semantic search find it.
-
-**AAAK (experimental)** — A lossy abbreviation dialect for packing repeated entities into fewer tokens at scale. Readable by any LLM that reads text — Claude, GPT, Gemini, Llama, Mistral — no decoder needed. **AAAK is a separate compression layer, not the storage default**, and on the LongMemEval benchmark it currently regresses vs raw mode (84.2% vs 96.6%). We're iterating. See the [note above](#a-note-from-milla--ben--april-7-2026) for the honest status.
-
-**Local, open, adaptable** — MemPalace runs entirely on your machine, on any data you have locally, without using any external API or services. It has been tested on conversations — but it can be adapted for different types of datastores. This is why we're open-sourcing it.
+> **声明**：本仓库是 [milla-jovovich/mempalace](https://github.com/milla-jovovich/mempalace) 的个人优化分支，在原版基础上进行了大量改造以适配中文场景和个人工作流。原版基准测试成绩（96.6% LongMemEval R@5）由上游项目完成，本分支聚焦于**日常使用体验的改进**。
 
 <br>
 
 [![][version-shield]][release-link]
 [![][python-shield]][python-link]
 [![][license-shield]][license-link]
-[![][discord-shield]][discord-link]
 
 <br>
 
-[Quick Start](#quick-start) · [The Palace](#the-palace) · [AAAK Dialect](#aaak-dialect-experimental) · [Benchmarks](#benchmarks) · [MCP Tools](#mcp-server)
-
-<br>
-
-### Highest LongMemEval score ever published — free or paid.
-
-<table>
-<tr>
-<td align="center"><strong>96.6%</strong><br><sub>LongMemEval R@5<br><b>raw mode</b>, zero API calls</sub></td>
-<td align="center"><strong>500/500</strong><br><sub>questions tested<br>independently reproduced</sub></td>
-<td align="center"><strong>$0</strong><br><sub>No subscription<br>No cloud. Local only.</sub></td>
-</tr>
-</table>
-
-<sub>Reproducible — runners in <a href="benchmarks/">benchmarks/</a>. <a href="benchmarks/BENCHMARKS.md">Full results</a>. The 96.6% is from <b>raw verbatim mode</b>, not AAAK or rooms mode (those score lower — see <a href="#a-note-from-milla--ben--april-7-2026">note above</a>).</sub>
+[快速开始](#quick-start) · [改造清单](#改造清单) · [Palace 架构](#the-palace) · [MCP 工具](#mcp-server) · [Dashboard](#chromadb-dashboard)
 
 </div>
 
 ---
 
-## A Note from Milla & Ben — April 7, 2026
+## 改造清单
 
-> The community caught real problems in this README within hours of launch and we want to address them directly.
->
-> **What we got wrong:**
->
-> - **The AAAK token example was incorrect.** We used a rough heuristic (`len(text)//3`) for token counts instead of an actual tokenizer. Real counts via OpenAI's tokenizer: the English example is 66 tokens, the AAAK example is 73. AAAK does not save tokens at small scales — it's designed for *repeated entities at scale*, and the README example was a bad demonstration of that. We're rewriting it.
->
-> - **"30x lossless compression" was overstated.** AAAK is a lossy abbreviation system (entity codes, sentence truncation). Independent benchmarks show AAAK mode scores **84.2% R@5 vs raw mode's 96.6%** on LongMemEval — a 12.4 point regression. The honest framing is: AAAK is an experimental compression layer that trades fidelity for token density, and **the 96.6% headline number is from RAW mode, not AAAK**.
->
-> - **"+34% palace boost" was misleading.** That number compares unfiltered search to wing+room metadata filtering. Metadata filtering is a standard ChromaDB feature, not a novel retrieval mechanism. Real and useful, but not a moat.
->
-> - **"Contradiction detection"** exists as a separate utility (`fact_checker.py`) but is not currently wired into the knowledge graph operations as the README implied.
->
-> - **"100% with Haiku rerank"** is real (we have the result files) but the rerank pipeline is not in the public benchmark scripts. We're adding it.
->
-> **What's still true and reproducible:**
->
-> - **96.6% R@5 on LongMemEval in raw mode**, on 500 questions, zero API calls — independently reproduced on M2 Ultra in under 5 minutes by [@gizmax](https://github.com/milla-jovovich/mempalace/issues/39).
-> - Local, free, no subscription, no cloud, no data leaving your machine.
-> - The architecture (wings, rooms, closets, drawers) is real and useful, even if it's not a magical retrieval boost.
->
-> **What we're doing:**
->
-> 1. Rewriting the AAAK example with real tokenizer counts and a scenario where AAAK actually demonstrates compression
-> 2. Adding `mode raw / aaak / rooms` clearly to the benchmark documentation so the trade-offs are visible
-> 3. Wiring `fact_checker.py` into the KG ops so the contradiction detection claim becomes true
-> 4. Pinning ChromaDB to a tested range (Issue #100), fixing the shell injection in hooks (#110), and addressing the macOS ARM64 segfault (#74)
->
-> **Thank you to everyone who poked holes in this.** Brutal honest criticism is exactly what makes open source work, and it's what we asked for. Special thanks to [@panuhorsmalahti](https://github.com/milla-jovovich/mempalace/issues/43), [@lhl](https://github.com/milla-jovovich/mempalace/issues/27), [@gizmax](https://github.com/milla-jovovich/mempalace/issues/39), and everyone who filed an issue or a PR in the first 48 hours. We're listening, we're fixing, and we'd rather be right than impressive.
->
-> — *Milla Jovovich & Ben Sigman*
+以下是本分支相对于原版 MemPalace 的全部改动：
+
+### 1. 日记机制全面重构
+
+- 新增 `extract_session` 工具：读取 VS Code Copilot 会话 JSONL 日志，提取 user/assistant 消息对
+- `diary_write` 增加 `index`（序号）、`session_id`（会话 ID）、`topic`（≤2 词关键词）参数
+- 日记按主题拆分（最多 3 个子主题），每条带结构化 schema（讨论主题 / 关键发现与决定 / 实施的改动 / 难点）
+- 用户偏好自动提取到知识图谱（`kg_add`，subject=user, predicate=prefers/requires/avoids）
+
+### 2. 对话入库工具 (ingest_session)
+
+- 新增 `mempalace_ingest_session` MCP 工具
+- 按 Q&A 对逐条写入 ChromaDB（room=conversation, type=conversation）
+- 支持 hook 自动触发：新 session 开启时自动入库上一个 session
+
+### 3. 7 天时间感知召回
+
+- 搜索结果 `filed_at` ≤ 7 天 → 直接返回
+- 搜索结果 `filed_at` > 7 天 → 自动加载该天全部 diary 条目到 `expanded_diary_context` 字段
+- 搜索结果新增 `filed_at` / `date` 字段暴露
+
+### 4. ChromaDB Dashboard (Streamlit)
+
+- 全新 `chromadb_dashboard.py`，8 个标签页：
+  - 对话内容浏览、Agent 日记浏览、全量浏览、搜索、统计、详情、添加记录、回收站
+- 软删除 → `~/.mempalace/trash.json`，支持恢复，超 10 天自动清理
+- 批量多选删除 + 单条详情面板
+- 表格按时间倒序排列
+- UI 美化：Noto Sans SC + Space Grotesk 字体、渐变背景、胶囊标签页
+
+### 5. MCP 工具描述中文化
+
+- TOOLS dict 所有 `description` 改为中文（drawer / wing / room 等术语保留英文）
+- 方便中文 agent 理解工具用途
+
+### 6. Windows 中文兼容修复
+
+- MCP server 入口 `main()` 增加 `sys.stdout.reconfigure(encoding="utf-8")`
+- 解决 Windows stdio 默认 cp936 导致中文 diary 写入失败的问题
+
+### 7. Copilot 协议 (copilot-instructions.md)
+
+- 新会话启动时自动 `diary_read` 读取最近 3 条日记
+- 会话结束时：`extract_session` → 深度总结 → 按主题拆分 `diary_write`
+- 回答前自动调用 `search` / `kg_query` 查证
+- 支持用户级全局配置（`~/.github/copilot-instructions.md`）
+
+### 8. 其他改进
+
+- `searcher.py` 搜索结果返回完整 metadata（`filed_at` / `date`）
+- `extract_session` 返回按 Q&A 对拆分，多条 assistant 消息合并为单条 answer
+- 回收站机制：软删除记录可恢复
 
 ---
 
@@ -501,8 +498,15 @@ claude mcp add mempalace -- python -m mempalace.mcp_server
 
 | Tool | What |
 |------|------|
-| `mempalace_diary_write` | Write AAAK diary entry |
+| `mempalace_diary_write` | Write diary entry (支持 index/session_id/topic) |
 | `mempalace_diary_read` | Read recent diary entries |
+
+**Session**
+
+| Tool | What |
+|------|------|
+| `mempalace_extract_session` | 从 VS Code JSONL 日志提取对话内容 |
+| `mempalace_ingest_session` | 将会话 Q&A 逐条入库 ChromaDB |
 
 The AI learns AAAK and the memory protocol automatically from the `mempalace_status` response. No manual configuration.
 
@@ -701,9 +705,26 @@ pip install mempalace
 
 ---
 
+## ChromaDB Dashboard
+
+启动可视化管理界面：
+
+```bash
+pip install streamlit
+streamlit run chromadb_dashboard.py
+```
+
+8 个标签页覆盖完整 CRUD 操作：浏览对话、Agent 日记、全量数据、语义搜索、统计图表、记录详情、手动添加、回收站恢复。
+
+---
+
 ## Contributing
 
 PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guidelines.
+
+## 致谢
+
+本项目基于 [milla-jovovich/mempalace](https://github.com/milla-jovovich/mempalace)（MIT License）。感谢原作者的开创性工作。
 
 ## License
 
@@ -716,5 +737,3 @@ MIT — see [LICENSE](LICENSE).
 [python-link]: https://www.python.org/
 [license-shield]: https://img.shields.io/badge/license-MIT-b0e8ff?style=flat-square&labelColor=0a0e14
 [license-link]: https://github.com/milla-jovovich/mempalace/blob/main/LICENSE
-[discord-shield]: https://img.shields.io/badge/discord-join-5865F2?style=flat-square&labelColor=0a0e14&logo=discord&logoColor=5865F2
-[discord-link]: https://discord.com/invite/ycTQQCu6kn
