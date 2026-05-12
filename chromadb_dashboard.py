@@ -405,7 +405,7 @@ st.markdown(
 
 # 侧边栏配置
 with st.sidebar:
-    st.markdown('<div class="ebot-sidebar-title">EBOT记忆管理系统</div>', unsafe_allow_html=True)
+    st.markdown('<div class="ebot-sidebar-title">EABOT记忆管理系统</div>', unsafe_allow_html=True)
     st.header("⚙️ 配置")
     
     palace_path = st.text_input(

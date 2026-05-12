@@ -68,12 +68,22 @@
 
 ### 7. Copilot 协议 (copilot-instructions.md)
 
-- 新会话启动时自动 `diary_read` 读取最近 3 条日记
+- 新会话启动时自动 `diary_read(last_n_sessions=3)` 读取最近 3 个不同会话的全部日记条目
 - 会话结束时：`extract_session` → 深度总结 → 按主题拆分 `diary_write`
 - 回答前自动调用 `search` / `kg_query` 查证
 - 支持用户级全局配置（`~/.github/copilot-instructions.md`）
 
-### 8. 其他改进
+### 8. 知识图谱冲突检测
+
+- `kg_add` 默认进行冲突检查：同一 (subject, predicate) 若已有不同 object 的当前事实，返回 `conflict=true` 与 `existing_facts` 列表，不写入
+- Agent 需将新旧事实展示给用户做决定后，再带 `force=true` 重新调用
+- 三种处理方式：保留旧事实、替换旧事实（先 `kg_invalidate` 再 `kg_add force=true`）、同时保留（直接 `kg_add force=true`）
+
+### 9. CJK / Unicode 名称支持
+
+- `sanitize_name` 正则从 ASCII-only 改为 `\w`（含 Unicode 字母/数字），支持中日韩字符作为 wing/room/entity 名称
+
+### 10. 其他改进
 
 - `searcher.py` 搜索结果返回完整 metadata（`filed_at` / `date`）
 - `extract_session` 返回按 Q&A 对拆分，多条 assistant 消息合并为单条 answer
@@ -481,7 +491,7 @@ claude mcp add mempalace -- python -m mempalace.mcp_server
 | Tool | What |
 |------|------|
 | `mempalace_kg_query` | Entity relationships with time filtering |
-| `mempalace_kg_add` | Add facts |
+| `mempalace_kg_add` | Add facts（默认冲突检查，`force=true` 跳过） |
 | `mempalace_kg_invalidate` | Mark facts as ended |
 | `mempalace_kg_timeline` | Chronological entity story |
 | `mempalace_kg_stats` | Graph overview |
@@ -499,7 +509,7 @@ claude mcp add mempalace -- python -m mempalace.mcp_server
 | Tool | What |
 |------|------|
 | `mempalace_diary_write` | Write diary entry (支持 index/session_id/topic) |
-| `mempalace_diary_read` | Read recent diary entries |
+| `mempalace_diary_read` | Read recent diary entries（支持 `last_n_sessions` 按会话分组） |
 
 **Session**
 
@@ -643,7 +653,7 @@ Plain text. Becomes Layer 0 — loaded every session.
 | `searcher.py` | Semantic search via ChromaDB |
 | `layers.py` | 4-layer memory stack |
 | `dialect.py` | AAAK compression — 30x lossless |
-| `knowledge_graph.py` | Temporal entity-relationship graph (SQLite) |
+| `knowledge_graph.py` | Temporal entity-relationship graph (SQLite), conflict detection |
 | `palace_graph.py` | Room-based navigation graph |
 | `onboarding.py` | Guided setup — generates AAAK bootstrap + wing config |
 | `entity_registry.py` | Entity code registry |

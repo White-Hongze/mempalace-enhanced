@@ -3,7 +3,7 @@
 import json
 import os
 
-from mempalace.config import MempalaceConfig
+from mempalace.config import MempalaceConfig, sanitize_name
 
 
 def test_config_bad_json(tmp_path):
@@ -77,3 +77,7 @@ def test_collection_name_from_config(tmp_path):
     )
     cfg = MempalaceConfig(config_dir=str(tmp_path))
     assert cfg.collection_name == "custom_col"
+
+
+def test_sanitize_name_allows_chinese():
+    assert sanitize_name("开朗的人", "name") == "开朗的人"

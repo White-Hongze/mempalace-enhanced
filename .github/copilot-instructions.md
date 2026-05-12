@@ -4,7 +4,7 @@
 
 每次新对话开始时（用户发来的第一条消息），在回复用户之前，先执行以下操作：
 
-1. 调用 `mcp_mempalace_diary_read`（agent_name 为 `copilot`，last_n 为 3），查看最近的日记条目。
+1. 调用 `mcp_mempalace_diary_read`（agent_name 为 `copilot`，last_n_sessions 为 3），读取最近 3 个不同会话的全部日记条目。
 2. 如果有相关上下文，在回答时参考这些记忆。
 
 ## 写日记（用户触发或会话结束时）

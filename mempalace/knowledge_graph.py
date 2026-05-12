@@ -177,6 +177,46 @@ class KnowledgeGraph:
             )
         return triple_id
 
+    def find_conflicts(self, subject: str, predicate: str, new_object: str):
+        """
+        Find currently-valid triples that conflict with a proposed new fact.
+
+        A conflict is: same (subject, predicate) is still valid (valid_to IS NULL)
+        but with a different object than the proposed one.
+
+        Returns a list of dicts describing the conflicting facts (empty if none).
+        """
+        sub_id = self._entity_id(subject)
+        new_obj_id = self._entity_id(new_object)
+        pred = predicate.lower().replace(" ", "_")
+
+        conn = self._conn()
+        rows = conn.execute(
+            """SELECT t.id, t.predicate, t.object, t.valid_from, t.valid_to,
+                      t.confidence, t.source_closet, t.extracted_at,
+                      e.name as obj_name
+               FROM triples t
+               JOIN entities e ON t.object = e.id
+               WHERE t.subject = ? AND t.predicate = ? AND t.valid_to IS NULL
+                 AND t.object != ?""",
+            (sub_id, pred, new_obj_id),
+        ).fetchall()
+
+        return [
+            {
+                "triple_id": row["id"],
+                "subject": subject,
+                "predicate": row["predicate"],
+                "object": row["obj_name"],
+                "valid_from": row["valid_from"],
+                "valid_to": row["valid_to"],
+                "confidence": row["confidence"],
+                "source_closet": row["source_closet"],
+                "extracted_at": row["extracted_at"],
+            }
+            for row in rows
+        ]
+
     def invalidate(self, subject: str, predicate: str, obj: str, ended: str = None):
         """Mark a relationship as no longer valid (set valid_to date)."""
         sub_id = self._entity_id(subject)

@@ -338,6 +338,67 @@ class TestKGTools:
         )
         assert result["success"] is True
 
+    def test_kg_add_returns_conflict_without_writing(self, monkeypatch, config, palace_path, kg):
+        _patch_mcp_server(monkeypatch, config, kg)
+        from mempalace.mcp_server import tool_kg_add
+
+        first = tool_kg_add(subject="user", predicate="prefers", object="PEP8")
+        assert first["success"] is True
+
+        second = tool_kg_add(subject="user", predicate="prefers", object="Google style")
+        assert second["success"] is False
+        assert second["conflict"] is True
+        assert second["pending_fact"]["object"] == "Google style"
+        assert len(second["existing_facts"]) == 1
+        assert second["existing_facts"][0]["object"] == "PEP8"
+        # New fact must NOT have been written
+        stats = kg.stats()
+        prefers_objects = {
+            r["object"] for r in kg.query_entity("user", direction="outgoing")
+            if r["predicate"] == "prefers"
+        }
+        assert prefers_objects == {"PEP8"}
+        assert stats["current_facts"] == 1
+
+    def test_kg_add_force_bypasses_conflict_check(self, monkeypatch, config, palace_path, kg):
+        _patch_mcp_server(monkeypatch, config, kg)
+        from mempalace.mcp_server import tool_kg_add
+
+        tool_kg_add(subject="user", predicate="prefers", object="PEP8")
+        result = tool_kg_add(
+            subject="user",
+            predicate="prefers",
+            object="Google style",
+            force=True,
+        )
+        assert result["success"] is True
+        prefers_objects = {
+            r["object"] for r in kg.query_entity("user", direction="outgoing")
+            if r["predicate"] == "prefers" and r["current"]
+        }
+        assert prefers_objects == {"PEP8", "Google style"}
+
+    def test_kg_add_no_conflict_for_same_object(self, monkeypatch, config, palace_path, kg):
+        _patch_mcp_server(monkeypatch, config, kg)
+        from mempalace.mcp_server import tool_kg_add
+
+        first = tool_kg_add(subject="user", predicate="prefers", object="PEP8")
+        second = tool_kg_add(subject="user", predicate="prefers", object="PEP8")
+        assert first["success"] is True
+        assert second["success"] is True
+        assert second.get("conflict") is not True
+
+    def test_kg_add_supports_chinese_object(self, monkeypatch, config, palace_path, kg):
+        _patch_mcp_server(monkeypatch, config, kg)
+        from mempalace.mcp_server import tool_kg_add
+
+        result = tool_kg_add(
+            subject="user",
+            predicate="is",
+            object="开朗的人",
+        )
+        assert result["success"] is True
+
     def test_kg_query(self, monkeypatch, config, palace_path, seeded_kg):
         _patch_mcp_server(monkeypatch, config, seeded_kg)
         from mempalace.mcp_server import tool_kg_query

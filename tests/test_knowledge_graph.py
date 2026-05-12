@@ -90,6 +90,39 @@ class TestInvalidation:
         assert chess[0]["current"] is False
 
 
+class TestFindConflicts:
+    def test_no_conflict_when_empty(self, kg):
+        assert kg.find_conflicts("user", "prefers", "PEP8") == []
+
+    def test_no_conflict_for_same_object(self, kg):
+        kg.add_triple("user", "prefers", "PEP8")
+        assert kg.find_conflicts("user", "prefers", "PEP8") == []
+
+    def test_conflict_on_same_subject_predicate_diff_object(self, kg):
+        kg.add_triple("user", "prefers", "PEP8")
+        conflicts = kg.find_conflicts("user", "prefers", "Google style")
+        assert len(conflicts) == 1
+        assert conflicts[0]["object"] == "PEP8"
+        assert conflicts[0]["predicate"] == "prefers"
+        assert conflicts[0]["valid_to"] is None
+
+    def test_invalidated_facts_do_not_conflict(self, kg):
+        kg.add_triple("user", "prefers", "PEP8")
+        kg.invalidate("user", "prefers", "PEP8", ended="2026-01-01")
+        assert kg.find_conflicts("user", "prefers", "Google style") == []
+
+    def test_multiple_conflicts(self, kg):
+        kg.add_triple("user", "prefers", "PEP8")
+        # bypass the conflict check at MCP layer by writing directly
+        kg.add_triple("user", "prefers", "Google style")
+        conflicts = kg.find_conflicts("user", "prefers", "Black")
+        assert len(conflicts) == 2
+
+    def test_different_predicate_is_not_a_conflict(self, kg):
+        kg.add_triple("user", "prefers", "PEP8")
+        assert kg.find_conflicts("user", "avoids", "PEP8") == []
+
+
 class TestTimeline:
     def test_timeline_all(self, seeded_kg):
         tl = seeded_kg.timeline()

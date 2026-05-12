@@ -16,7 +16,9 @@ from pathlib import Path
 # in file paths, SQLite, or ChromaDB metadata.
 
 MAX_NAME_LENGTH = 128
-_SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_ .'-]{0,126}[a-zA-Z0-9]?$")
+# Allow Unicode letters/numbers (including CJK) while keeping the same
+# punctuation constraints and blocking path/meta characters elsewhere.
+_SAFE_NAME_RE = re.compile(r"^\w[\w .'-]{0,126}\w?$")
 
 
 def sanitize_name(value: str, field_name: str = "name") -> str:

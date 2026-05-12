@@ -453,15 +453,55 @@ def tool_kg_query(entity: str, as_of: str = None, direction: str = "both"):
 
 
 def tool_kg_add(
-    subject: str, predicate: str, object: str, valid_from: str = None, source_closet: str = None
+    subject: str,
+    predicate: str,
+    object: str,
+    valid_from: str = None,
+    source_closet: str = None,
+    force: bool = False,
 ):
-    """向知识图谱添加关系。"""
+    """向知识图谱添加关系。
+
+    默认会检查 (subject, predicate) 是否已有不同 object 的当前事实；若有冲突，
+    返回冲突列表而不写入，便于上层把两条展示给用户做决定。
+    用户决定后，可携带 force=True 重新调用以强制写入新事实
+    （旧事实若需失效，请显式调用 kg_invalidate）。
+    """
     try:
         subject = sanitize_name(subject, "subject")
         predicate = sanitize_name(predicate, "predicate")
         object = sanitize_name(object, "object")
     except ValueError as e:
         return {"success": False, "error": str(e)}
+
+    if not force:
+        conflicts = _kg.find_conflicts(subject, predicate, object)
+        if conflicts:
+            return {
+                "success": False,
+                "conflict": True,
+                "pending_fact": {
+                    "subject": subject,
+                    "predicate": predicate,
+                    "object": object,
+                    "valid_from": valid_from,
+                },
+                "existing_facts": conflicts,
+                "message": (
+                    f"检测到 {len(conflicts)} 条现存事实与新事实冲突（同一 "
+                    f"subject+predicate，object 不同）。请把新旧事实展示给用户并询问："
+                    "(a) 保留旧事实，丢弃新事实；(b) 让旧事实失效（kg_invalidate）"
+                    "并写入新事实（kg_add force=True）；(c) 同时保留（仍需 force=True）。"
+                ),
+                "resolution": {
+                    "keep_old": "丢弃此次写入，不调用任何工具。",
+                    "replace": [
+                        "对每条 existing_facts 调用 mempalace_kg_invalidate。",
+                        "再次调用 mempalace_kg_add 时携带 force=true。",
+                    ],
+                    "keep_both": "再次调用 mempalace_kg_add 时携带 force=true。",
+                },
+            }
 
     _wal_log(
         "kg_add",
@@ -471,6 +511,7 @@ def tool_kg_add(
             "object": object,
             "valid_from": valid_from,
             "source_closet": source_closet,
+            "force": force,
         },
     )
     triple_id = _kg.add_triple(
@@ -736,9 +777,11 @@ def tool_ingest_session(session_log_path: str, agent_name: str = "copilot"):
         return {"success": False, "error": str(e)}
 
 
-def tool_diary_read(agent_name: str, last_n: int = 10):
+def tool_diary_read(agent_name: str, last_n: int = 10, last_n_sessions: int = 0):
     """
-    读取 agent 的最近日记条目。按时间顺序返回最近 N 条。
+    读取 agent 的最近日记条目。
+    - last_n_sessions > 0 时：返回最近 N 个不同 session_id 的全部条目（一个 session 可能拆成多条）。
+    - 否则按 last_n 返回最近 N 条。
     """
     wing = f"wing_{agent_name.lower().replace(' ', '_')}"
     col = _get_collection()
@@ -758,17 +801,30 @@ def tool_diary_read(agent_name: str, last_n: int = 10):
         # 合并并按时间戳排序
         entries = []
         for doc, meta in zip(results["documents"], results["metadatas"]):
+            meta = meta or {}
             entries.append(
                 {
                     "date": meta.get("date", ""),
                     "timestamp": meta.get("filed_at", ""),
                     "topic": meta.get("topic", ""),
+                    "session_id": meta.get("session_id", ""),
                     "content": doc,
                 }
             )
 
         entries.sort(key=lambda x: x["timestamp"], reverse=True)
-        entries = entries[:last_n]
+
+        if last_n_sessions > 0:
+            # 按 session_id 分组，保留最近 N 个不同 session 的全部条目
+            seen_sessions = []
+            for e in entries:
+                sid = e.get("session_id", "")
+                if sid and sid not in seen_sessions:
+                    seen_sessions.append(sid)
+            target_sessions = set(seen_sessions[:last_n_sessions])
+            entries = [e for e in entries if e.get("session_id", "") in target_sessions]
+        else:
+            entries = entries[:last_n]
 
         return {
             "agent": agent_name,
@@ -831,7 +887,7 @@ TOOLS = {
         "handler": tool_kg_query,
     },
     "mempalace_kg_add": {
-        "description": "向知识图谱添加事实。主体 → 谓词 → 客体，可附带时间窗口。例如 ('Max', 'started_school', 'Year 7', valid_from='2026-09-01')。",
+        "description": "向知识图谱添加事实。主体 → 谓词 → 客体，可附带时间窗口。默认会做冲突检查：若同一 (subject, predicate) 已有不同 object 的当前事实，将返回 conflict=true 与 existing_facts 列表，不写入；请把新旧事实展示给用户做决定后，再带 force=true 重新调用。例如 ('Max', 'started_school', 'Year 7', valid_from='2026-09-01')。",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -848,6 +904,10 @@ TOOLS = {
                 "source_closet": {
                     "type": "string",
                     "description": "该事实出处的 drawer ID（可选）",
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "跳过冲突检查，强制写入。仅在用户已确认如何处理冲突后才传 true。",
                 },
             },
             "required": ["subject", "predicate", "object"],
@@ -1025,7 +1085,11 @@ TOOLS = {
                 },
                 "last_n": {
                     "type": "integer",
-                    "description": "读取最近条目的数量（默认：10）",
+                    "description": "读取最近条目的数量（默认：10）。与 last_n_sessions 互斥。",
+                },
+                "last_n_sessions": {
+                    "type": "integer",
+                    "description": "读取最近 N 个不同 session 的全部条目（默认：0 表示不启用）。优先于 last_n。",
                 },
             },
             "required": ["agent_name"],
