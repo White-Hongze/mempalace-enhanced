@@ -1,138 +1,59 @@
-# MemPalace Hooks — Auto-Save for Terminal AI Tools
+# MemPalace Hooks — SessionStart Autosave
 
-These hook scripts make MemPalace save automatically. No manual "save" commands needed.
+This folder now uses a single hook: `SessionStart`.
 
-## What They Do
+When a new chat session starts, the hook tries to ingest the previous session transcript automatically.
 
-| Hook | When It Fires | What Happens |
-|------|--------------|-------------|
-| **Save Hook** | Every 8 human messages | Blocks the AI, tells it to save key topics/decisions/quotes to the palace |
-| **PreCompact Hook** | Right before context compaction | Emergency save — forces the AI to save EVERYTHING before losing context |
+## Files
 
-The AI does the actual filing — it knows the conversation context, so it classifies memories into the right wings/halls/closets. The hooks just tell it WHEN to save.
+- `mempal_sessionstart_hook.sh`: Main hook logic (Linux/macOS + Git Bash on Windows)
+- `mempal_sessionstart_hook.ps1`: Windows wrapper that locates Git Bash and forwards stdin
+- `mempalace.windows.json`: VS Code Copilot template for Windows
+- `mempalace.linux.json`: VS Code Copilot template for Linux
+- `mempalace.macos.json`: VS Code Copilot template for macOS
 
-## Install — Claude Code
+## Setup
 
-Add to `.claude/settings.local.json`:
+1. Pick the template for your OS.
+2. Edit its `command` path to match your local repo location.
+3. Register it in your Copilot hook config.
 
-```json
-{
-  "hooks": {
-    "Stop": [{
-      "matcher": "*",
-      "hooks": [{
-        "type": "command",
-        "command": "/absolute/path/to/hooks/mempal_save_hook.sh",
-        "timeout": 30
-      }]
-    }],
-    "PreCompact": [{
-      "hooks": [{
-        "type": "command",
-        "command": "/absolute/path/to/hooks/mempal_precompact_hook.sh",
-        "timeout": 30
-      }]
-    }]
-  }
-}
-```
+Template note:
 
-Make them executable:
-```bash
-chmod +x hooks/mempal_save_hook.sh hooks/mempal_precompact_hook.sh
-```
+- Current template commands use example absolute paths (for example `~/dev/mempalace/...` or `D:\\dev\\mempalace\\...`). Update them for your machine.
 
-## Install — Codex CLI (OpenAI)
-
-Add to `.codex/hooks.json`:
-
-```json
-{
-  "Stop": [{
-    "type": "command",
-    "command": "/absolute/path/to/hooks/mempal_save_hook.sh",
-    "timeout": 30
-  }],
-  "PreCompact": [{
-    "type": "command",
-    "command": "/absolute/path/to/hooks/mempal_precompact_hook.sh",
-    "timeout": 30
-  }]
-}
-```
-
-## Configuration
-
-Edit `mempal_save_hook.sh` to change:
-
-- **`SAVE_INTERVAL=8`** — How many human messages between saves. Lower = more frequent saves, higher = less interruption.
-- **`STATE_DIR`** — Where hook state is stored (defaults to `~/.mempalace/hook_state/`)
-- **`MEMPAL_DIR`** — Optional. Set to a conversations directory to auto-run `mempalace mine <dir>` on each save trigger. Leave blank (default) to let the AI handle saving via the block reason message.
-
-### mempalace CLI
-
-The relevant commands are:
+Linux/macOS permission:
 
 ```bash
-mempalace mine <dir>               # Mine all files in a directory
-mempalace mine <dir> --mode convos # Mine conversation transcripts only
+chmod +x hooks/mempal_sessionstart_hook.sh
 ```
 
-The hooks resolve the repo root automatically from their own path, so they work regardless of where you install the repo.
+## How It Works
 
-## How It Works (Technical)
+1. Reads current hook payload from stdin (session id + transcript path).
+2. Loads `~/.mempalace/hook_state/last_session_meta`.
+3. If it detects a different previous session with a valid transcript file, it:
+   - copies the transcript into a staging folder,
+   - runs `mempalace mine <stage_dir> --mode convos`.
+4. Writes current session metadata back to `last_session_meta`.
+5. Returns a short JSON `systemMessage` with result (`autosaved`, `skipped`, or `failed`).
 
-### Save Hook (Stop event)
+## Runtime Requirements
 
-```
-User sends message → AI responds → Claude Code fires Stop hook
-                                            ↓
-                                    Hook counts human messages in JSONL transcript
-                                            ↓
-                              ┌─── < 8 since last save ──→ echo "{}" (let AI stop)
-                              │
-                              └─── ≥ 8 since last save ──→ {"decision": "block", "reason": "save..."}
-                                                                    ↓
-                                                            AI saves to palace
-                                                                    ↓
-                                                            AI tries to stop again
-                                                                    ↓
-                                                            stop_hook_active = true
-                                                                    ↓
-                                                            Hook sees flag → echo "{}" (let it through)
-```
+- Python available (`.venv` preferred, then `python3`/`python` fallback)
+- On Windows: Git Bash available (`C:\Program Files\Git\bin\bash.exe` preferred)
 
-The `stop_hook_active` flag prevents infinite loops: block once → AI saves → tries to stop → flag is true → we let it through.
-
-### PreCompact Hook
-
-```
-Context window getting full → Claude Code fires PreCompact
-                                        ↓
-                                Hook ALWAYS blocks
-                                        ↓
-                                AI saves everything
-                                        ↓
-                                Compaction proceeds
-```
-
-No counting needed — compaction always warrants a save.
+If runtime requirements are missing, the hook exits gracefully with a skip message.
 
 ## Debugging
 
-Check the hook log:
+Check log file:
+
 ```bash
 cat ~/.mempalace/hook_state/hook.log
 ```
 
-Example output:
-```
-[14:30:15] Session abc123: 12 exchanges, 12 since last save
-[14:35:22] Session abc123: 15 exchanges, 15 since last save
-[14:35:22] TRIGGERING SAVE at exchange 15
-[14:40:01] Session abc123: 18 exchanges, 3 since last save
-```
+Useful state files:
 
-## Cost
-
-**Zero extra tokens.** The hooks are bash scripts that run locally. They don't call any API. The only "cost" is the AI spending a few seconds organizing memories at each checkpoint — and it's doing that with context it already has loaded.
+- `~/.mempalace/hook_state/last_session_meta`
+- `~/.mempalace/hook_state/ingest_stage/`

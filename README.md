@@ -522,24 +522,24 @@ The AI learns AAAK and the memory protocol automatically from the `mempalace_sta
 
 ---
 
-## Auto-Save Hooks
+## SessionStart Hook (VS Code Copilot)
 
-Two hooks for Claude Code that automatically save memories during work:
+This branch uses a single `SessionStart` hook to ingest the previous session when a new chat window starts.
 
-**Save Hook** — every 15 messages, triggers a structured save. Topics, decisions, quotes, code changes. Also regenerates the critical facts layer.
+- Linux template: `hooks/mempalace.linux.json`
+- macOS template: `hooks/mempalace.macos.json`
+- Windows template: `hooks/mempalace.windows.json`
 
-**PreCompact Hook** — fires before context compression. Emergency save before the window shrinks.
+Each template registers only `SessionStart` and calls `hooks/mempal_sessionstart_hook.sh` (Windows uses `hooks/mempal_sessionstart_hook.ps1` wrapper).
 
-```json
-{
-  "hooks": {
-    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "/path/to/mempalace/hooks/mempal_save_hook.sh"}]}],
-    "PreCompact": [{"matcher": "", "hooks": [{"type": "command", "command": "/path/to/mempalace/hooks/mempal_precompact_hook.sh"}]}]
-  }
-}
-```
+Typical flow:
 
-**Optional auto-ingest:** Set the `MEMPAL_DIR` environment variable to a directory path and the hooks will automatically run `mempalace mine` on that directory during each save trigger (background on stop, synchronous on precompact).
+1. New session starts.
+2. Hook reads `~/.mempalace/hook_state/last_session_meta`.
+3. If the previous transcript exists and is from a different session, it stages that transcript and runs `mempalace mine <stage_dir> --mode convos`.
+4. Hook returns a `systemMessage` so you can see whether autosave/ingest happened or was skipped.
+
+See `hooks/README.md` for platform-specific setup notes.
 
 ---
 
@@ -659,8 +659,11 @@ Plain text. Becomes Layer 0 — loaded every session.
 | `entity_registry.py` | Entity code registry |
 | `entity_detector.py` | Auto-detect people and projects from content |
 | `split_mega_files.py` | Split concatenated transcripts into per-session files |
-| `hooks/mempal_save_hook.sh` | Auto-save every N messages |
-| `hooks/mempal_precompact_hook.sh` | Emergency save before compaction |
+| `hooks/mempal_sessionstart_hook.sh` | SessionStart ingest for previous session transcript |
+| `hooks/mempal_sessionstart_hook.ps1` | Windows wrapper to call the shell hook via Git Bash |
+| `hooks/mempalace.windows.json` | VS Code Copilot hook template for Windows |
+| `hooks/mempalace.linux.json` | VS Code Copilot hook template for Linux |
+| `hooks/mempalace.macos.json` | VS Code Copilot hook template for macOS |
 
 ---
 
@@ -686,10 +689,13 @@ mempalace/
 │   ├── longmemeval_bench.py   ← LongMemEval runner
 │   ├── locomo_bench.py        ← LoCoMo runner
 │   └── membench_bench.py      ← MemBench runner
-├── hooks/                     ← Claude Code auto-save hooks
+├── hooks/                     ← SessionStart hook + templates
 │   ├── README.md              ← hook setup guide
-│   ├── mempal_save_hook.sh    ← save every N messages
-│   └── mempal_precompact_hook.sh ← emergency save
+│   ├── mempal_sessionstart_hook.sh
+│   ├── mempal_sessionstart_hook.ps1
+│   ├── mempalace.windows.json
+│   ├── mempalace.linux.json
+│   └── mempalace.macos.json
 ├── examples/                  ← usage examples
 │   ├── basic_mining.py
 │   ├── convo_import.py

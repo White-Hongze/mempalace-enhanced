@@ -1,13 +1,32 @@
 #!/bin/bash
 # MEMPALACE SESSION-START HOOK — Autosave previous session when a new window starts
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 STATE_DIR="$HOME/.mempalace/hook_state"
 mkdir -p "$STATE_DIR"
+
+PYTHON_CMD=""
+if [ -x "$REPO_ROOT/.venv/bin/python" ]; then
+    PYTHON_CMD="$REPO_ROOT/.venv/bin/python"
+elif [ -x "$REPO_ROOT/.venv/Scripts/python.exe" ]; then
+    PYTHON_CMD="$REPO_ROOT/.venv/Scripts/python.exe"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_CMD="python3"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_CMD="python"
+fi
+
+if [ -z "$PYTHON_CMD" ]; then
+    echo '{"systemMessage":"SessionStart hook skipped: python not found."}'
+    exit 0
+fi
 
 INPUT=$(cat)
 INPUT_B64=$(printf '%s' "$INPUT" | base64 | tr -d '\n')
 
-PARSED_VARS=$(HOOK_INPUT_B64="$INPUT_B64" python3 - <<'PYEOF'
+PARSED_VARS=$(HOOK_INPUT_B64="$INPUT_B64" "$PYTHON_CMD" - <<'PYEOF'
 import base64
 import json
 import os
@@ -42,7 +61,7 @@ if [ -f "$LAST_META_FILE" ]; then
 
     if [ -n "$LAST_SESSION_ID" ] && [ "$LAST_SESSION_ID" != "$CURRENT_SESSION_ID" ]; then
         if [ -f "$LAST_TRANSCRIPT_PATH" ]; then
-            USER_COUNT=$(python3 - "$LAST_TRANSCRIPT_PATH" <<'PYEOF'
+            USER_COUNT=$("$PYTHON_CMD" - "$LAST_TRANSCRIPT_PATH" <<'PYEOF'
 import json
 import sys
 
@@ -72,7 +91,7 @@ PYEOF
                 STAGE_FILE="$STAGE_DIR/$(basename "$LAST_TRANSCRIPT_PATH")"
                 cp "$LAST_TRANSCRIPT_PATH" "$STAGE_FILE" 2>/dev/null
 
-                if PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python3 -m mempalace mine "$STAGE_DIR" --mode convos >> "$STATE_DIR/hook.log" 2>&1; then
+                if [ -n "$PYTHON_CMD" ] && (cd "$REPO_ROOT" && PYTHONIOENCODING=utf-8 PYTHONUTF8=1 "$PYTHON_CMD" -m mempalace mine "$STAGE_DIR" --mode convos >> "$STATE_DIR/hook.log" 2>&1); then
                     MESSAGE="SessionStart autosaved previous session $LAST_SESSION_ID from transcript file"
                     echo "[$(date '+%H:%M:%S')] $MESSAGE" >> "$STATE_DIR/hook.log"
                 else
@@ -93,7 +112,7 @@ fi
 echo "$CURRENT_SESSION_ID|$CURRENT_TRANSCRIPT_PATH" > "$LAST_META_FILE"
 
 if [ -n "$MESSAGE" ]; then
-    python3 - <<'PYEOF' "$MESSAGE"
+    "$PYTHON_CMD" - <<'PYEOF' "$MESSAGE"
 import json
 import sys
 

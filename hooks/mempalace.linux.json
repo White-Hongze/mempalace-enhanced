@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "bash -lc '~/dev/mempalace/hooks/mempal_sessionstart_hook.sh'",
+        "timeout": 30
+      }
+    ]
+  }
+}
